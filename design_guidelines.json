@@ -1,0 +1,138 @@
+{
+  "theme_and_archetype": {
+    "domain": "Health, Medical (Doctor-Patient Platform)",
+    "theme": "Light",
+    "archetype": "Archetype 1 (Organic & Earthy) mixed with Futuristic/Premium Glassmorphism",
+    "vibe": "Premium, futuristic, AI-enhanced, soft, trustworthy, editorial, luxury SaaS feel"
+  },
+  "color_palette": {
+    "background": "#FFFFFF",
+    "surface": "#EEFBF3",
+    "glass_layer": "#D4F5E2",
+    "accent_primary": "#34C472",
+    "text_primary": "#0A2518",
+    "text_secondary": "#4A6E59",
+    "border_subtle": "rgba(52, 196, 114, 0.2)",
+    "glass_border": "rgba(255, 255, 255, 0.4)",
+    "rules": [
+      "No harsh black (#000000), use deep green-tinted darks like #0A2518.",
+      "Use #EEFBF3 for main sections and alternating backgrounds.",
+      "Use #D4F5E2 with backdrop-blur-xl and low opacity for glass elements.",
+      "Accent Green #34C472 strictly for CTAs, active states, and AI glowing indicators."
+    ]
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Instrument Serif",
+      "body": "Outfit",
+      "mono": "JetBrains Mono"
+    },
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl tracking-tight leading-none font-normal",
+      "h2": "text-3xl sm:text-4xl tracking-tight leading-tight",
+      "h3": "text-2xl sm:text-3xl tracking-tight",
+      "body_large": "text-lg sm:text-xl leading-relaxed",
+      "body": "text-base leading-relaxed",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold text-[#34C472]"
+    },
+    "rules": [
+      "Instrument Serif MUST be used for all primary headings to give the editorial, luxury feel.",
+      "Outfit is for body text, data points, and UI components.",
+      "Do NOT use 'font-bold' on Instrument Serif, use font-normal or italic for elegance."
+    ]
+  },
+  "layout_and_spacing": {
+    "philosophy": "Generous Spacing Philosophy",
+    "marketing_pages": "Use pure HTML + Tailwind for asymmetrical layouts. Avoid Shadcn containers. Use massive padding (py-24 or py-32).",
+    "dashboards": "Control Room Grid. gap-4 or gap-6. Keep it clean and readable.",
+    "glassmorphism": {
+      "background": "bg-white/40 or bg-[#D4F5E2]/30",
+      "blur": "backdrop-blur-xl or backdrop-blur-2xl",
+      "border": "border border-white/40 shadow-sm",
+      "shadow": "shadow-[0_8px_32px_rgba(52,196,114,0.1)]"
+    }
+  },
+  "motion_and_interactions": {
+    "animations": [
+      "Floating elements: Slow translateY animations for 3D widgets (e.g., calendar, medical cross).",
+      "Hover effects on glass cards: Slight lift (-translate-y-1), increase blur and shadow.",
+      "AI Elements: Pulse/Glow effects using shadow-[0_0_15px_rgba(52,196,114,0.5)].",
+      "Page load: Staggered fade up."
+    ],
+    "libraries_to_use": [
+      "framer-motion",
+      "lucide-react"
+    ]
+  },
+  "components": {
+    "strategy": {
+      "marketing": "Custom HTML/Tailwind for bento grids and asymmetric layouts. Use pure CSS or framer-motion for animations.",
+      "dashboard": "Shadcn UI (Customized). Use flat, rectangular, dense styles.",
+      "buttons": "Rounded-full for CTAs (pill shape). Glassy buttons for secondary actions."
+    },
+    "specific_components": {
+      "header": "Crystal Glass sticky nav (z-50). backdrop-blur-xl bg-white/70, subtle bottom border.",
+      "cards": "Glassmorphism for Patient/Doctor dashboards. Subtle border radius (rounded-2xl).",
+      "inputs": "Shadcn inputs but customized with soft green focus rings (focus:ring-[#34C472])."
+    }
+  },
+  "image_urls": {
+    "hero_backgrounds": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/f53fdde2-2dbb-436c-a3ad-006535e274bd/images/87baad59d473222c4a6a49f16d28680121a974b42d719186d20b450bd17d2f19.png",
+        "description": "3D frosted glass medical cross with floating bubbles, premium.",
+        "category": "hero_visual",
+        "usage": "Use as the main hero graphic on the landing page (right side or overlapping)."
+      }
+    ],
+    "ai_elements": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/f53fdde2-2dbb-436c-a3ad-006535e274bd/images/31762df3176c9c5f734a15c6eb70143f19f72d389f1015143eca5431cea872ef.png",
+        "description": "Abstract AI health sphere glowing in mint.",
+        "category": "ai_assistant",
+        "usage": "Use in the AI Assistant chat interface or AI teaser section."
+      }
+    ],
+    "widgets": [
+      {
+        "url": "https://static.prod-images.emergentagent.com/jobs/f53fdde2-2dbb-436c-a3ad-006535e274bd/images/3d4aa3385c29226e1c7d2b99481593cf21b52f91cdb940dba8e7f32d21b7b022.png",
+        "description": "3D floating calendar widget.",
+        "category": "feature_visual",
+        "usage": "Use in the 'Booking / Availability' feature showcase."
+      }
+    ],
+    "people": [
+      {
+        "url": "https://images.unsplash.com/photo-1673865641073-4479f93a7776?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzd8MHwxfHNlYXJjaHwxfHxmcmllbmRseSUyMG1vZGVybiUyMGRvY3RvciUyMHBvcnRyYWl0fGVufDB8fHx8MTc3ODg2MzUwMHww&ixlib=rb-4.1.0&q=85",
+        "description": "Female doctor portrait.",
+        "category": "doctor_profile",
+        "usage": "Use in Doctor Search & Profile pages."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1730597842283-943c7986ee2c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzd8MHwxfHNlYXJjaHwzfHxmcmllbmRseSUyMG1vZGVybiUyMGRvY3RvciUyMHBvcnRyYWl0fGVufDB8fHx8MTc3ODg2MzUwMHww&ixlib=rb-4.1.0&q=85",
+        "description": "Male doctor portrait.",
+        "category": "doctor_profile",
+        "usage": "Use in Doctor Search & Profile pages."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwxfHxwYXRpZW50JTIwZG9jdG9yJTIwY29uc3VsdGF0aW9uJTIwYnJpZ2h0fGVufDB8fHx8MTc3ODg2MzUwMXww&ixlib=rb-4.1.0&q=85",
+        "description": "Doctor and patient consultation.",
+        "category": "patient_interaction",
+        "usage": "Use in 'Why Choose Us' or 'Patient Dashboard' welcome areas."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Install Google Fonts in index.css: @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&display=swap');",
+    "Configure Tailwind font family: sans: ['Outfit', 'sans-serif'], serif: ['Instrument Serif', 'serif'].",
+    "Use Phosphor icons or Lucide icons for medical symbols. Keep stroke width thin (1.5) for elegance.",
+    "Data-testid is MANDATORY for all interactive elements.",
+    "Never use solid black text. Use #0A2518 for contrast.",
+    "For the Landing Page hero, combine the 3D medical cross graphic with floating glass cards showing mock metrics. Overlap them slightly for depth.",
+    "For Auth Pages, use a 2-column layout. Left side: Glassy login form on a soft mint background. Right side: Full-height image (consultation_1) with a soft green overlay.",
+    "Patient and Doctor Dashboards should use a sidebar navigation. The main content area should have a #EEFBF3 background, with widgets as white glass cards (backdrop-blur).",
+    "Booking Flow: Implement a clean Calendly-style UI. Do NOT use default HTML date inputs. Build a custom grid of available slots using Shadcn buttons.",
+    "AI Health Assistant: Design a floating chat bubble in the bottom right. When opened, it should look like a frosted glass window with soft mint gradients.",
+    "Add tailwind animation for floating elements: 'animate-bounce' is too fast, create a custom 'animate-float' keyframe (transform translateY(-10px) over 3s ease-in-out infinite alternate)."
+  ]
+}
