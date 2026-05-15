@@ -29,7 +29,7 @@ export default function Navbar() {
                     <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white shadow-[0_4px_18px_rgba(52,196,114,0.4)]">
                         <Activity size={18} strokeWidth={2.4} />
                     </div>
-                    <span className="editorial text-2xl text-mint-800">MedSphere</span>
+                    <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
                 </Link>
 
                 <nav className="hidden md:flex items-center gap-8 text-sm">

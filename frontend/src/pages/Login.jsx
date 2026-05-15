@@ -34,11 +34,11 @@ export default function Login() {
         <div className="min-h-screen grid lg:grid-cols-2">
             {/* Left: form */}
             <div className="flex flex-col px-8 sm:px-16 py-10">
-                <Link to="/" className="editorial text-2xl text-mint-800" data-testid="auth-logo">MedSphere</Link>
+                <Link to="/" className="editorial text-2xl text-mint-800" data-testid="auth-logo">Sukhya Med</Link>
                 <div className="flex-1 grid place-items-center">
                     <div className="w-full max-w-md glass-mint rounded-3xl p-8 sm:p-10 animate-fade-up">
                         <span className="overline">Welcome back</span>
-                        <h1 className="editorial mt-2 text-4xl text-mint-800">Sign in to MedSphere</h1>
+                        <h1 className="editorial mt-2 text-4xl text-mint-800">Sign in to Sukhya Med</h1>
                         <p className="mt-2 text-sm text-mint-800/70">
                             Continue your premium healthcare experience.
                         </p>
@@ -122,7 +122,7 @@ export default function Login() {
                 <div className="absolute bottom-12 left-12 right-12 glass rounded-2xl p-6">
                     <span className="overline">Trusted by hospitals</span>
                     <p className="editorial text-2xl text-mint-800 mt-2 leading-snug">
-                        "MedSphere brought our outpatient flow into the future — patients adore it."
+                        "Sukhya Med brought our outpatient flow into the future — patients adore it."
                     </p>
                     <p className="text-xs text-mint-800/60 mt-3">— Dr. Aanya Sharma · Apollo Hospitals</p>
                 </div>

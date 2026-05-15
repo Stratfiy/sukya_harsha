@@ -49,10 +49,10 @@ export default function Register() {
     return (
         <div className="min-h-screen grid lg:grid-cols-2">
             <div className="flex flex-col px-8 sm:px-16 py-10">
-                <Link to="/" className="editorial text-2xl text-mint-800">MedSphere</Link>
+                <Link to="/" className="editorial text-2xl text-mint-800">Sukhya Med</Link>
                 <div className="flex-1 grid place-items-center py-10">
                     <div className="w-full max-w-md glass-mint rounded-3xl p-8 sm:p-10 animate-fade-up">
-                        <span className="overline">Join MedSphere</span>
+                        <span className="overline">Join Sukhya Med</span>
                         <h1 className="editorial mt-2 text-4xl text-mint-800">Create your account</h1>
 
                         <div className="mt-6 grid grid-cols-2 gap-2 p-1 rounded-full bg-white/60 border border-mint-100" data-testid="register-role-toggle">

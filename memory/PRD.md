@@ -1,4 +1,4 @@
-# MedSphere — Doctor-Patient Premium Platform PRD
+# Sukhya Med — Doctor-Patient Premium Platform PRD
 
 ## Original Problem Statement
 Build an interactive, relational doctor-patient platform — fully functional frontend + backend + auth + databases. Futuristic, most-secure, premium feel. Reference: https://ai4invest.in/ (glassy + advanced + simple). Light green + white color palette. Includes uploaded Design Brief PDF.
@@ -25,7 +25,7 @@ Build an interactive, relational doctor-patient platform — fully functional fr
 - ✅ Full auth (bcrypt, JWT cookies, brute-force, admin seed, password reset)
 - ✅ MongoDB models: users, doctors, appointments, prescriptions, ai_messages
 - ✅ 8 seeded doctors with realistic data + 5 days of availability
-- ✅ Seeded admin (`admin@medsphere.com` / `admin123`) and patient (`patient@test.com` / `password123`)
+- ✅ Seeded admin (`admin@sukhyamed.com` / `admin123`) and patient (`patient@test.com` / `password123`)
 - ✅ Landing, Login, Register, Doctors search, Doctor Profile + booking, Patient/Doctor/Admin dashboards
 - ✅ Floating glassmorphism AI chat bubble (patient only)
 - ✅ Mocked "Join consultation" button

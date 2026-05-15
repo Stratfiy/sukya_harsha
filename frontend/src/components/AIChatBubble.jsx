@@ -10,7 +10,7 @@ export default function AIChatBubble() {
         {
             role: "assistant",
             content:
-                "Hi! I'm your MedSphere AI Health Assistant. Ask me about symptoms, lifestyle, or which specialist to consult. I'm not a substitute for professional advice.",
+                "Hi! I'm your Sukhya Med AI Health Assistant. Ask me about symptoms, lifestyle, or which specialist to consult. I'm not a substitute for professional advice.",
         },
     ]);
     const [input, setInput] = useState("");

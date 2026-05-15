@@ -9,7 +9,7 @@ export default function Footer() {
                         <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white">
                             <Activity size={18} strokeWidth={2.4} />
                         </div>
-                        <span className="editorial text-2xl text-mint-800">MedSphere</span>
+                        <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
                     </div>
                     <p className="mt-4 max-w-md text-sm text-mint-800/70 leading-relaxed">
                         The future of digital healthcare — elegant, calming, intelligent. Built for hospitals,
@@ -38,7 +38,7 @@ export default function Footer() {
                 </div>
             </div>
             <div className="border-t border-mint-100/60 py-6 text-center text-xs text-mint-800/50">
-                © {new Date().getFullYear()} MedSphere · Designed for the future of care.
+                © {new Date().getFullYear()} Sukhya Med · Designed for the future of care.
             </div>
         </footer>
     );

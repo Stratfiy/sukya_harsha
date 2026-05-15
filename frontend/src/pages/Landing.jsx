@@ -35,7 +35,7 @@ export default function Landing() {
                             <br /> doctors and patients.
                         </h1>
                         <p className="mt-6 max-w-xl text-lg text-mint-800/70 leading-relaxed">
-                            MedSphere is the editorial, AI-driven platform where hospitals, specialists and patients meet.
+                            Sukhya Med is the editorial, AI-driven platform where hospitals, specialists and patients meet.
                             Book consultations, talk to an AI Health Assistant and manage care — beautifully.
                         </p>
                         <div className="mt-9 flex flex-wrap items-center gap-4">
@@ -84,7 +84,7 @@ export default function Landing() {
             {/* FEATURES */}
             <section id="features" className="mx-auto max-w-7xl px-6 py-24">
                 <div className="max-w-2xl">
-                    <span className="overline">Why MedSphere</span>
+                    <span className="overline">Why Sukhya Med</span>
                     <h2 className="mt-3 text-4xl sm:text-5xl text-mint-800">
                         Designed like a <em className="italic text-mint-600">luxury product</em>,
                         engineered like a hospital.
@@ -125,7 +125,7 @@ export default function Landing() {
                         </h2>
                         <p className="mt-5 max-w-xl text-mint-800/70 leading-relaxed">
                             The AI Health Assistant — built with Claude Sonnet 4.5 — guides you through symptoms,
-                            explains your reports, and helps you choose the right specialist on MedSphere.
+                            explains your reports, and helps you choose the right specialist on Sukhya Med.
                         </p>
                         <Link to="/register" className="mt-7 btn-pill btn-primary inline-flex" data-testid="ai-cta">
                             Try the AI assistant <ArrowRight size={18} />

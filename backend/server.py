@@ -32,7 +32,7 @@ JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALGORITHM = "HS256"
 EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
 
-app = FastAPI(title="MedSphere API")
+app = FastAPI(title="Sukhya Med API")
 api = APIRouter(prefix="/api")
 
 
@@ -514,12 +514,12 @@ async def admin_approve_doctor(doctor_id: str, req: DoctorApprovalUpdate, user: 
 async def ai_chat(req: ChatRequest, user: dict = Depends(get_current_user)):
     session_id = req.session_id or f"{user['id']}-{uuid.uuid4()}"
     system_message = (
-        "You are MedSphere's AI Health Assistant — a warm, professional medical guide. "
+        "You are Sukhya Med's AI Health Assistant — a warm, professional medical guide. "
         "You answer general health questions, explain medical concepts, and suggest when patients "
         "should consult a doctor on the platform. Keep answers concise (3-5 short paragraphs max), "
         "use simple language, and ALWAYS include a clear disclaimer that you do not replace professional "
         "medical advice. Never prescribe medications. If symptoms are severe, urge the user to book a "
-        "consultation through MedSphere or visit an ER."
+        "consultation through Sukhya Med or visit an ER."
     )
     try:
         chat = LlmChat(
@@ -553,7 +553,7 @@ async def ai_history(session_id: Optional[str] = None, user: dict = Depends(get_
 # ---------------- Misc ----------------
 @api.get("/")
 async def root():
-    return {"message": "MedSphere API is running", "version": "1.0"}
+    return {"message": "Sukhya Med API is running", "version": "1.0"}
 
 
 @api.get("/health")
@@ -577,7 +577,7 @@ app.add_middleware(
 # ---------------- Startup: indexes + seed ----------------
 SEED_DOCTORS = [
     {
-        "name": "Dr. Aanya Sharma", "email": "aanya.sharma@medsphere.com",
+        "name": "Dr. Aanya Sharma", "email": "aanya.sharma@sukhyamed.com",
         "specialty": "Cardiology", "hospital": "Apollo Hospitals",
         "experience_years": 12, "rating": 4.9, "reviews_count": 312,
         "bio": "Interventional cardiologist specializing in complex angioplasty and preventive cardiology.",
@@ -585,7 +585,7 @@ SEED_DOCTORS = [
         "consultation_fee": 2200, "languages": ["English", "Hindi"],
     },
     {
-        "name": "Dr. Rohan Mehta", "email": "rohan.mehta@medsphere.com",
+        "name": "Dr. Rohan Mehta", "email": "rohan.mehta@sukhyamed.com",
         "specialty": "Dermatology", "hospital": "Fortis Healthcare",
         "experience_years": 9, "rating": 4.8, "reviews_count": 210,
         "bio": "Cosmetic and clinical dermatologist. Expert in acne, pigmentation and laser treatments.",
@@ -593,7 +593,7 @@ SEED_DOCTORS = [
         "consultation_fee": 1800, "languages": ["English", "Hindi", "Gujarati"],
     },
     {
-        "name": "Dr. Priya Iyer", "email": "priya.iyer@medsphere.com",
+        "name": "Dr. Priya Iyer", "email": "priya.iyer@sukhyamed.com",
         "specialty": "Pediatrics", "hospital": "Manipal Hospitals",
         "experience_years": 14, "rating": 5.0, "reviews_count": 489,
         "bio": "Pediatrician with expertise in newborn care, developmental issues and adolescent health.",
@@ -601,7 +601,7 @@ SEED_DOCTORS = [
         "consultation_fee": 1500, "languages": ["English", "Tamil", "Hindi"],
     },
     {
-        "name": "Dr. Arjun Kapoor", "email": "arjun.kapoor@medsphere.com",
+        "name": "Dr. Arjun Kapoor", "email": "arjun.kapoor@sukhyamed.com",
         "specialty": "Neurology", "hospital": "Max Super Speciality",
         "experience_years": 18, "rating": 4.9, "reviews_count": 401,
         "bio": "Senior neurologist treating epilepsy, stroke recovery and movement disorders.",
@@ -609,7 +609,7 @@ SEED_DOCTORS = [
         "consultation_fee": 2500, "languages": ["English", "Hindi"],
     },
     {
-        "name": "Dr. Sara Khan", "email": "sara.khan@medsphere.com",
+        "name": "Dr. Sara Khan", "email": "sara.khan@sukhyamed.com",
         "specialty": "Gynecology", "hospital": "Cloudnine Hospitals",
         "experience_years": 11, "rating": 4.9, "reviews_count": 367,
         "bio": "Obstetrician & gynecologist specializing in high-risk pregnancies and women's wellness.",
@@ -617,7 +617,7 @@ SEED_DOCTORS = [
         "consultation_fee": 2000, "languages": ["English", "Hindi", "Urdu"],
     },
     {
-        "name": "Dr. Kabir Singh", "email": "kabir.singh@medsphere.com",
+        "name": "Dr. Kabir Singh", "email": "kabir.singh@sukhyamed.com",
         "specialty": "Orthopedics", "hospital": "AIIMS Delhi",
         "experience_years": 15, "rating": 4.7, "reviews_count": 256,
         "bio": "Orthopedic surgeon specializing in joint replacements and sports injuries.",
@@ -625,7 +625,7 @@ SEED_DOCTORS = [
         "consultation_fee": 2300, "languages": ["English", "Hindi", "Punjabi"],
     },
     {
-        "name": "Dr. Meera Reddy", "email": "meera.reddy@medsphere.com",
+        "name": "Dr. Meera Reddy", "email": "meera.reddy@sukhyamed.com",
         "specialty": "Psychiatry", "hospital": "NIMHANS",
         "experience_years": 10, "rating": 4.9, "reviews_count": 198,
         "bio": "Psychiatrist focused on mood disorders, anxiety, and cognitive behavioural therapy.",
@@ -633,7 +633,7 @@ SEED_DOCTORS = [
         "consultation_fee": 1900, "languages": ["English", "Telugu", "Hindi"],
     },
     {
-        "name": "Dr. Daniel Joseph", "email": "daniel.joseph@medsphere.com",
+        "name": "Dr. Daniel Joseph", "email": "daniel.joseph@sukhyamed.com",
         "specialty": "General Physician", "hospital": "Independent Practice",
         "experience_years": 8, "rating": 4.8, "reviews_count": 142,
         "bio": "Family physician offering primary care, preventive checks and chronic disease management.",
