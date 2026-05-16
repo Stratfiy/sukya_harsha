@@ -468,7 +468,7 @@ def _public_user(doc: dict) -> dict:
 
 
 @api.post("/auth/login")
-@limiter.limit("5/minute")
+@limiter.limit("10/minute")
 async def login(req: LoginRequest, request: Request, response: Response):
     email = req.email.lower()
     user = await db.users.find_one({"email": email})
