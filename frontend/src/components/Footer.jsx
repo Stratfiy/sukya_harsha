@@ -1,4 +1,4 @@
-import { Activity } from "lucide-react";
+import { Activity, MapPin, Mail, Phone } from "lucide-react";
 
 export default function Footer() {
     return (
@@ -16,29 +16,26 @@ export default function Footer() {
                         doctors and patients who expect a premium experience.
                     </p>
                 </div>
-
                 <div>
                     <p className="overline mb-3">Platform</p>
                     <ul className="space-y-2 text-sm text-mint-800/70">
                         <li>Find Doctors</li>
+                        <li>About</li>
+                        <li>What We Provide</li>
                         <li>AI Health Assistant</li>
-                        <li>Hospital Network</li>
-                        <li>Online Consultation</li>
                     </ul>
                 </div>
-
                 <div>
-                    <p className="overline mb-3">Trust & Security</p>
+                    <p className="overline mb-3">Reach us</p>
                     <ul className="space-y-2 text-sm text-mint-800/70">
-                        <li>HIPAA-aligned</li>
-                        <li>End-to-end encrypted</li>
-                        <li>JWT auth + bcrypt</li>
-                        <li>Privacy Policy</li>
+                        <li className="flex items-center gap-2"><MapPin size={14} /> Navi Mumbai, India</li>
+                        <li className="flex items-center gap-2"><Mail size={14} /> hello@sukhyamed.com</li>
+                        <li className="flex items-center gap-2"><Phone size={14} /> +91-22-0000-0000</li>
                     </ul>
                 </div>
             </div>
             <div className="border-t border-mint-100/60 py-6 text-center text-xs text-mint-800/50">
-                © {new Date().getFullYear()} Sukhya Med · Designed for the future of care.
+                © {new Date().getFullYear()} Sukhya Med · HIPAA-aligned · JWT + bcrypt + 2FA secure.
             </div>
         </footer>
     );

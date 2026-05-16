@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import api, { formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Star, MapPin, Briefcase, Languages, CalendarCheck, ArrowRight } from "lucide-react";
+import { Star, Briefcase, ArrowRight, Video, Building, CalendarCheck } from "lucide-react";
 
-function groupSlotsByDay(slots) {
-    const map = new Map();
-    slots.forEach((iso) => {
-        const d = new Date(iso);
-        const key = d.toDateString();
-        if (!map.has(key)) map.set(key, []);
-        map.get(key).push(iso);
-    });
-    return Array.from(map.entries()).map(([day, items]) => ({ day, items }));
+function nextDays(n) {
+    const out = [];
+    const base = new Date();
+    base.setHours(0, 0, 0, 0);
+    for (let i = 0; i < n; i++) {
+        const d = new Date(base);
+        d.setDate(d.getDate() + i);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        out.push({ iso: `${yyyy}-${mm}-${dd}`, label: d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" }) });
+    }
+    return out;
 }
 
 export default function DoctorProfile() {
@@ -22,17 +26,28 @@ export default function DoctorProfile() {
     const { user } = useAuth();
     const nav = useNavigate();
     const [doctor, setDoctor] = useState(null);
-    const [error, setError] = useState("");
-    const [selectedSlot, setSelectedSlot] = useState("");
+    const [date, setDate] = useState(nextDays(1)[0].iso);
+    const [slotData, setSlotData] = useState({ slots: [] });
+    const [selectedSlot, setSelectedSlot] = useState(null);
+    const [consultationType, setConsultationType] = useState("offline");
     const [reason, setReason] = useState("");
-    const [booking, setBooking] = useState(false);
+    const [error, setError] = useState("");
     const [success, setSuccess] = useState(null);
+    const [booking, setBooking] = useState(false);
+
+    const days = useMemo(() => nextDays(7), []);
 
     useEffect(() => {
         api.get(`/doctors/${id}`).then((r) => setDoctor(r.data)).catch((e) => setError(formatApiError(e.response?.data?.detail)));
     }, [id]);
 
-    const days = useMemo(() => doctor ? groupSlotsByDay(doctor.available_slots || []) : [], [doctor]);
+    useEffect(() => {
+        if (!id || !date) return;
+        api.get(`/doctors/${id}/slots`, { params: { date } }).then((r) => {
+            setSlotData(r.data);
+            setSelectedSlot(null);
+        });
+    }, [id, date]);
 
     const book = async () => {
         setError("");
@@ -41,11 +56,13 @@ export default function DoctorProfile() {
         if (!selectedSlot) return setError("Please pick a time slot.");
         setBooking(true);
         try {
-            const { data } = await api.post("/appointments", { doctor_id: id, slot_time: selectedSlot, reason });
+            const { data } = await api.post("/appointments", {
+                doctor_id: id, date, time_slot: selectedSlot.time, consultation_type: consultationType, reason,
+            });
             setSuccess(data);
-            setSelectedSlot("");
-            const r = await api.get(`/doctors/${id}`);
-            setDoctor(r.data);
+            setSelectedSlot(null);
+            const r = await api.get(`/doctors/${id}/slots`, { params: { date } });
+            setSlotData(r.data);
         } catch (e) {
             setError(formatApiError(e.response?.data?.detail));
         } finally {
@@ -69,19 +86,18 @@ export default function DoctorProfile() {
         <div className="min-h-screen">
             <Navbar />
             <section className="mx-auto max-w-6xl px-6 pt-10 pb-20">
-                <Link to="/doctors" className="text-sm text-mint-600 hover:underline" data-testid="doctor-back">← Back to doctors</Link>
+                <Link to="/find-doctors" className="text-sm text-mint-600 hover:underline" data-testid="doctor-back">← Back</Link>
 
                 <div className="mt-6 grid lg:grid-cols-3 gap-8">
-                    {/* Profile */}
                     <div className="lg:col-span-1 glass-mint rounded-3xl p-6">
-                        <img src={doctor.image_url} alt={doctor.name} className="w-full h-64 object-cover rounded-2xl" />
+                        <img src={doctor.profile_photo_url} alt={doctor.name} className="w-full h-64 object-cover rounded-2xl" />
                         <h1 className="editorial mt-5 text-3xl text-mint-800">{doctor.name}</h1>
-                        <p className="text-sm text-mint-600 font-medium">{doctor.specialty}</p>
+                        <p className="text-sm text-mint-600 font-medium">{doctor.specialization}</p>
                         <div className="mt-4 space-y-2 text-sm text-mint-800/80">
                             <p className="flex items-center gap-2"><Star size={14} fill="#34C472" stroke="#34C472" /> {doctor.rating} · {doctor.reviews_count} reviews</p>
-                            <p className="flex items-center gap-2"><MapPin size={14} /> {doctor.hospital}</p>
-                            <p className="flex items-center gap-2"><Briefcase size={14} /> {doctor.experience_years} years experience</p>
-                            <p className="flex items-center gap-2"><Languages size={14} /> {(doctor.languages || []).join(", ")}</p>
+                            <p className="flex items-center gap-2"><Briefcase size={14} /> {doctor.years_of_experience} years experience</p>
+                            {doctor.hospital && <p className="flex items-center gap-2"><Building size={14} /> {doctor.hospital.name}, {doctor.hospital.area}</p>}
+                            {doctor.online_consultation_enabled && <p className="flex items-center gap-2 text-mint-600"><Video size={14} /> Online consultation available</p>}
                         </div>
                         <div className="mt-5 pt-4 border-t border-mint-100 flex items-center justify-between">
                             <span className="overline">Consultation</span>
@@ -89,76 +105,68 @@ export default function DoctorProfile() {
                         </div>
                     </div>
 
-                    {/* Booking */}
                     <div className="lg:col-span-2 glass rounded-3xl p-6">
                         <span className="overline">About</span>
                         <p className="mt-2 text-mint-800/80 leading-relaxed">{doctor.bio}</p>
 
-                        <div className="mt-8">
-                            <div className="flex items-center gap-2"><CalendarCheck size={18} className="text-mint-600" /><h2 className="editorial text-2xl text-mint-800">Pick a slot</h2></div>
+                        <div className="mt-8 flex items-center gap-2"><CalendarCheck size={18} className="text-mint-600" /><h2 className="editorial text-2xl text-mint-800">Pick a date & slot</h2></div>
 
-                            {days.length === 0 ? (
-                                <p className="mt-4 text-sm text-mint-800/60" data-testid="no-slots">No available slots right now. Please check back soon.</p>
-                            ) : (
-                                <div className="mt-5 space-y-5" data-testid="slot-grid">
-                                    {days.map((d) => (
-                                        <div key={d.day}>
-                                            <p className="text-xs font-semibold text-mint-800/70 uppercase tracking-wider">
-                                                {new Date(d.day).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
-                                            </p>
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                                {d.items.map((iso) => {
-                                                    const t = new Date(iso);
-                                                    const label = t.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-                                                    const active = selectedSlot === iso;
-                                                    return (
-                                                        <button
-                                                            key={iso}
-                                                            onClick={() => setSelectedSlot(iso)}
-                                                            className={`rounded-full px-4 py-2 text-sm transition border ${active ? "bg-mint-500 text-white border-mint-500 shadow" : "bg-white/70 text-mint-800 border-mint-100 hover:border-mint-500"}`}
-                                                            data-testid={`slot-${iso}`}
-                                                        >
-                                                            {label}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
+                        <div className="mt-4 flex gap-2 overflow-x-auto pb-2" data-testid="date-strip">
+                            {days.map((d) => (
+                                <button key={d.iso} onClick={() => setDate(d.iso)}
+                                    className={`min-w-[110px] rounded-2xl px-4 py-3 text-sm transition border ${date === d.iso ? "bg-mint-500 text-white border-mint-500" : "bg-white/70 text-mint-800 border-mint-100 hover:border-mint-500"}`}
+                                    data-testid={`date-${d.iso}`}>
+                                    {d.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {slotData.slots.length === 0 ? (
+                            <p className="mt-4 text-sm text-mint-800/60" data-testid="no-slots">No slots available on this day.</p>
+                        ) : (
+                            <div className="mt-4 flex flex-wrap gap-2" data-testid="slot-grid">
+                                {slotData.slots.map((s) => {
+                                    const active = selectedSlot?.time === s.time;
+                                    return (
+                                        <button key={s.time} onClick={() => setSelectedSlot(s)}
+                                            className={`rounded-full px-4 py-2 text-sm transition border ${active ? "bg-mint-500 text-white border-mint-500 shadow" : "bg-white/70 text-mint-800 border-mint-100 hover:border-mint-500"}`}
+                                            data-testid={`slot-${s.time}`}>
+                                            {s.time}<span className="ml-1 text-[10px] uppercase opacity-70">{s.mode}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {doctor.online_consultation_enabled && (
+                            <div className="mt-6">
+                                <p className="overline mb-2">Consultation type</p>
+                                <div className="flex gap-2" data-testid="consult-toggle">
+                                    {["offline", "online"].map((t) => (
+                                        <button key={t} onClick={() => setConsultationType(t)}
+                                            className={`rounded-full px-4 py-2 text-sm transition border ${consultationType === t ? "bg-mint-500 text-white border-mint-500" : "bg-white/70 border-mint-100"}`}
+                                            data-testid={`consult-${t}`}>
+                                            {t === "online" ? "Online" : "In-person"}
+                                        </button>
                                     ))}
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        )}
 
-                        <div className="mt-6">
-                            <label className="block">
-                                <span className="text-xs font-medium text-mint-800/80">Reason for visit (optional)</span>
-                                <textarea
-                                    rows={2}
-                                    value={reason}
-                                    onChange={(e) => setReason(e.target.value)}
-                                    placeholder="A short note for the doctor…"
-                                    className="mt-1.5 w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"
-                                    data-testid="booking-reason-input"
-                                />
-                            </label>
-                        </div>
+                        <textarea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for visit (optional)"
+                            className="mt-5 w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"
+                            data-testid="booking-reason" />
 
                         {error && <p className="mt-3 text-sm text-red-600" data-testid="booking-error">{error}</p>}
                         {success && (
                             <div className="mt-4 rounded-xl bg-mint-50 border border-mint-100 px-4 py-3 text-sm text-mint-800" data-testid="booking-success">
-                                ✓ Appointment confirmed with {success.doctor_name} on{" "}
-                                {new Date(success.slot_time).toLocaleString()}.{" "}
-                                <Link to="/dashboard/patient" className="text-mint-600 font-medium underline">View in dashboard</Link>
+                                ✓ Booked with {success.doctor_name} on {success.date} at {success.time_slot}.{" "}
+                                <Link to="/patient/dashboard" className="text-mint-600 font-medium underline">View in dashboard</Link>
                             </div>
                         )}
 
-                        <button
-                            onClick={book}
-                            disabled={booking || !selectedSlot}
-                            className="mt-6 btn-pill btn-primary disabled:opacity-50"
-                            data-testid="book-consultation-btn"
-                        >
-                            {booking ? "Booking…" : (<>Book consultation <ArrowRight size={18} /></>)}
+                        <button onClick={book} disabled={booking || !selectedSlot} className="mt-6 btn-pill btn-primary disabled:opacity-50" data-testid="book-btn">
+                            {booking ? "Booking…" : <>Book consultation <ArrowRight size={18} /></>}
                         </button>
                     </div>
                 </div>

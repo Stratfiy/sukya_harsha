@@ -9,6 +9,21 @@ const api = axios.create({
     headers: { "Content-Type": "application/json" },
 });
 
+// Attach CSRF token from cookie on every state-changing request
+api.interceptors.request.use((config) => {
+    const method = (config.method || "get").toLowerCase();
+    if (["post", "put", "patch", "delete"].includes(method)) {
+        const csrf = readCookie("csrf_token");
+        if (csrf) config.headers["X-CSRF-Token"] = csrf;
+    }
+    return config;
+});
+
+function readCookie(name) {
+    const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+    return match ? decodeURIComponent(match[2]) : null;
+}
+
 export function formatApiError(detail) {
     if (detail == null) return "Something went wrong. Please try again.";
     if (typeof detail === "string") return detail;

@@ -6,6 +6,7 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null); // null=checking, false=anon, object=user
     const [loading, setLoading] = useState(true);
+    const [config, setConfig] = useState({ google_oauth_enabled: false, google_client_id: "" });
 
     const refreshMe = useCallback(async () => {
         try {
@@ -20,11 +21,34 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         refreshMe();
+        api.get("/config/public").then((r) => setConfig(r.data)).catch(() => {});
     }, [refreshMe]);
 
     const login = async (email, password) => {
         try {
             const { data } = await api.post("/auth/login", { email, password });
+            if (data.requires_2fa) return { ok: true, requires_2fa: true, temp_token: data.temp_token };
+            setUser(data);
+            return { ok: true, user: data };
+        } catch (e) {
+            return { ok: false, error: formatApiError(e.response?.data?.detail) };
+        }
+    };
+
+    const verify2fa = async (code, temp_token) => {
+        try {
+            const { data } = await api.post("/auth/2fa/verify", { code, temp_token });
+            setUser(data);
+            return { ok: true, user: data };
+        } catch (e) {
+            return { ok: false, error: formatApiError(e.response?.data?.detail) };
+        }
+    };
+
+    const googleLogin = async (id_token, role = "patient") => {
+        try {
+            const { data } = await api.post("/auth/google", { id_token, role });
+            if (data.requires_2fa) return { ok: true, requires_2fa: true, temp_token: data.temp_token };
             setUser(data);
             return { ok: true, user: data };
         } catch (e) {
@@ -43,16 +67,12 @@ export function AuthProvider({ children }) {
     };
 
     const logout = async () => {
-        try {
-            await api.post("/auth/logout");
-        } catch {
-            /* ignore */
-        }
+        try { await api.post("/auth/logout"); } catch { /* ignore */ }
         setUser(false);
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, register, logout, refreshMe }}>
+        <AuthContext.Provider value={{ user, loading, config, login, verify2fa, googleLogin, register, logout, refreshMe }}>
             {children}
         </AuthContext.Provider>
     );
