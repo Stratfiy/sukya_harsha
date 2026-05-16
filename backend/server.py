@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
-
+import re
 import os
 import io
 import base64
@@ -80,6 +80,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' https:; frame-ancestors 'none'"
         return response
 
 
@@ -704,36 +705,24 @@ async def reset_password(req: ResetPasswordRequest, request: Request):
     return {"message": "Password updated successfully."}
 
 
-# ---------------- DEV-ONLY: read latest password reset link ----------------
-@api.get("/auth/dev/latest-reset-link/{email}")
-async def latest_reset_link(email: str):
-    """Mocked email helper while Resend key is not configured. Returns the latest reset link for an email."""
-    user = await db.users.find_one({"email": email.lower()})
-    if not user:
-        raise HTTPException(status_code=404, detail="No user")
-    rec = await db.password_reset_tokens.find_one({"user_id": user["id"], "used": False}, sort=[("created_at", -1)])
-    if not rec:
-        return {"link": None}
-    return {"link": f"{FRONTEND_URL}/reset-password/{rec['token']}"}
-
-
 # ---------------- HOSPITALS ----------------
 @api.get("/hospitals")
 async def list_hospitals(area: Optional[str] = None, city: Optional[str] = None,
                          specialty: Optional[str] = None, q: Optional[str] = None):
     query: Dict[str, Any] = {"is_active": True}
     if area:
-        query["area"] = {"$regex": f"^{area}$", "$options": "i"}
+        query["area"] = {"$regex": f"^{re.escape(area)}$", "$options": "i"}
     if city:
-        query["city"] = {"$regex": f"^{city}$", "$options": "i"}
+        query["city"] = {"$regex": f"^{re.escape(city)}$", "$options": "i"}
     if specialty:
         query["specialties_available"] = specialty
     if q:
+        eq = re.escape(q)
         query["$or"] = [
-            {"name": {"$regex": q, "$options": "i"}},
-            {"area": {"$regex": q, "$options": "i"}},
-            {"city": {"$regex": q, "$options": "i"}},
-            {"pin_code": {"$regex": q, "$options": "i"}},
+            {"name": {"$regex": eq, "$options": "i"}},
+            {"area": {"$regex": eq, "$options": "i"}},
+            {"city": {"$regex": eq, "$options": "i"}},
+            {"pin_code": {"$regex": eq, "$options": "i"}},
         ]
     rows = await db.hospitals.find(query, {"_id": 0}).to_list(200)
     # Attach doctor counts
@@ -791,12 +780,13 @@ async def list_doctors(specialty: Optional[str] = None, hospital_id: Optional[st
     if hospital_id:
         query["hospital_id"] = hospital_id
     if q:
+        eq = re.escape(q)
         query["$or"] = [
-            {"name": {"$regex": q, "$options": "i"}},
-            {"specialization": {"$regex": q, "$options": "i"}},
+            {"name": {"$regex": eq, "$options": "i"}},
+            {"specialization": {"$regex": eq, "$options": "i"}},
         ]
     if area:
-        hosps = await db.hospitals.find({"area": {"$regex": f"^{area}$", "$options": "i"}}, {"_id": 0, "id": 1}).to_list(500)
+        hosps = await db.hospitals.find({"area": {"$regex": f"^{re.escape(area)}$", "$options": "i"}}, {"_id": 0, "id": 1}).to_list(500)
         query["hospital_id"] = {"$in": [h["id"] for h in hosps]}
     rows = await db.doctors.find(query, {"_id": 0}).to_list(500)
     # Attach hospital info
@@ -1031,6 +1021,14 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
         raise HTTPException(status_code=403, detail="Forbidden")
     if user["role"] == "doctor" and appt["doctor_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Forbidden")
+
+    # SECURITY FIX: Restrict status transitions by role
+    if req.status:
+        if user["role"] == "patient" and req.status not in ("cancelled",):
+            raise HTTPException(status_code=403, detail="Patients can only cancel appointments")
+        if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
+            raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
+
     update = {k: v for k, v in req.model_dump(exclude_none=True).items()}
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.appointments.update_one({"id": appt_id}, {"$set": update})
@@ -1041,6 +1039,13 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
 # ---------------- PRESCRIPTIONS ----------------
 @api.post("/prescriptions")
 async def create_prescription(req: PrescriptionCreate, request: Request, user: dict = Depends(require_role("doctor")), _csrf=Depends(verify_csrf)):
+    # SECURITY FIX: Verify this doctor owns this appointment and patient_id matches
+    appt = await db.appointments.find_one({"id": req.appointment_id, "doctor_id": user["id"]})
+    if not appt:
+        raise HTTPException(status_code=403, detail="You can only prescribe for your own appointments")
+    if appt["patient_id"] != req.patient_id:
+        raise HTTPException(status_code=400, detail="Patient ID does not match the appointment")
+
     pid = str(uuid.uuid4())
     doc = {
         "id": pid,
