@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, ArrowRight, ShieldCheck } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, ShieldCheck, Activity } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import GoogleButton from "../components/GoogleButton";
 
@@ -44,7 +44,12 @@ export default function Login() {
     return (
         <div className="min-h-screen grid lg:grid-cols-2">
             <div className="flex flex-col px-8 sm:px-16 py-10">
-                <Link to="/" className="editorial text-2xl text-mint-800" data-testid="auth-logo">Sukhya Med</Link>
+                <Link to="/" className="flex items-center gap-2.5" data-testid="auth-logo">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-600 text-white shadow-[0_4px_18px_rgba(52,196,114,0.4)]">
+                        <Activity size={18} strokeWidth={2.4} />
+                    </div>
+                    <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
+                </Link>
                 <div className="flex-1 grid place-items-center">
                     <div className="w-full max-w-md glass-mint rounded-3xl p-8 sm:p-10 animate-fade-up">
                         {!twofaToken ? (
