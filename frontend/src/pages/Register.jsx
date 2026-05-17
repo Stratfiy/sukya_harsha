@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, User as UserIcon, Phone, ArrowRight, Stethoscope, HeartPulse } from "lucide-react";
+import { Eye, EyeOff, Activity, HeartPulse, Stethoscope } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import api from "../lib/api";
 import GoogleButton from "../components/GoogleButton";
@@ -72,101 +72,158 @@ export default function Register() {
     };
 
     return (
-        <div className="min-h-screen grid lg:grid-cols-2">
-            <div className="flex flex-col px-6 sm:px-12 py-8">
-                <Link to="/" className="editorial text-2xl text-mint-800">Sukhya Med</Link>
-                <div className="flex-1 grid place-items-center py-6">
-                    <div className="w-full max-w-md glass-mint rounded-3xl p-8 animate-fade-up">
+        <div className="min-h-screen bg-white" style={{
+            backgroundImage: "radial-gradient(circle at 0% 0%, rgba(52,196,114,0.10), transparent 50%), radial-gradient(circle at 100% 0%, rgba(212,245,226,0.5), transparent 50%)"
+        }}>
+            {/* Navbar */}
+            <div className="flex items-center justify-between px-8 py-5">
+                <Link to="/" className="flex items-center gap-2.5" data-testid="auth-logo">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white shadow-[0_4px_18px_rgba(52,196,114,0.4)]">
+                        <Activity size={18} strokeWidth={2.4} />
+                    </div>
+                    <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
+                </Link>
+                <p className="text-sm text-mint-800/60">
+                    Already have an account?{" "}
+                    <Link to="/login" className="text-mint-600 font-medium hover:underline" data-testid="link-login">
+                        Sign in
+                    </Link>
+                </p>
+            </div>
+
+            {/* Main content */}
+            <div className="flex flex-col items-center px-6 py-10">
+                <div className="w-full max-w-lg">
+
+                    {/* Heading */}
+                    <div className="mb-8">
                         <span className="overline">Join Sukhya Med</span>
-                        <h1 className="editorial mt-2 text-4xl text-mint-800">Create your account</h1>
+                        <h1 className="editorial mt-2 text-5xl text-mint-800 leading-tight">
+                            Deploy your first<br />
+                            <em className="text-mint-500 italic">appointment today.</em>
+                        </h1>
+                        <p className="mt-3 text-mint-800/60 text-sm">No credit card required. Book in under 2 minutes.</p>
+                    </div>
 
-                        <div className="mt-6 grid grid-cols-2 gap-2 p-1 rounded-full bg-white/60 border border-mint-100" data-testid="role-toggle">
-                            <button type="button" onClick={() => update("role", "patient")}
-                                className={`flex items-center justify-center gap-2 rounded-full py-2 text-sm transition ${form.role === "patient" ? "bg-mint-500 text-white shadow" : "text-mint-800/70"}`}
-                                data-testid="role-patient">
-                                <HeartPulse size={16} /> I am a Patient
-                            </button>
-                            <button type="button" onClick={() => update("role", "doctor")}
-                                className={`flex items-center justify-center gap-2 rounded-full py-2 text-sm transition ${form.role === "doctor" ? "bg-mint-500 text-white shadow" : "text-mint-800/70"}`}
-                                data-testid="role-doctor">
-                                <Stethoscope size={16} /> I am a Doctor
-                            </button>
+                    {/* Role toggle */}
+                    <div className="grid grid-cols-2 gap-2 p-1.5 rounded-full bg-mint-50 border border-mint-100 mb-6" data-testid="role-toggle">
+                        <button type="button" onClick={() => update("role", "patient")}
+                            className={`flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition ${form.role === "patient" ? "bg-mint-500 text-white shadow" : "text-mint-800/60 hover:text-mint-800"}`}
+                            data-testid="role-patient">
+                            <HeartPulse size={15} /> I am a Patient
+                        </button>
+                        <button type="button" onClick={() => update("role", "doctor")}
+                            className={`flex items-center justify-center gap-2 rounded-full py-2.5 text-sm font-medium transition ${form.role === "doctor" ? "bg-mint-500 text-white shadow" : "text-mint-800/60 hover:text-mint-800"}`}
+                            data-testid="role-doctor">
+                            <Stethoscope size={15} /> I am a Doctor
+                        </button>
+                    </div>
+
+                    {/* Google */}
+                    <div className="mb-5">
+                        <GoogleButton role={form.role} onSuccess={() => nav("/")} onError={setError} />
+                    </div>
+
+                    <div className="flex items-center gap-3 mb-6 text-xs text-mint-800/40">
+                        <span className="flex-1 h-px bg-mint-100" />or sign up with email<span className="flex-1 h-px bg-mint-100" />
+                    </div>
+
+                    {/* Form */}
+                    <form onSubmit={submit} className="space-y-4" data-testid="register-form">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <LabelField label="Full Name" type="text" placeholder="Dr. Aanya Sharma" value={form.full_name}
+                                onChange={(v) => update("full_name", v)} required testid="reg-name" />
+                            <LabelField label="Phone" type="tel" placeholder="+91 9000000000" value={form.phone}
+                                onChange={(v) => update("phone", v)} required testid="reg-phone" />
                         </div>
+                        <LabelField label="Work Email" type="email" placeholder="you@company.com" value={form.email}
+                            onChange={(v) => update("email", v)} required testid="reg-email" />
 
-                        <div className="mt-5"><GoogleButton role={form.role} onSuccess={() => nav("/")} onError={setError} /></div>
-                        <div className="my-4 flex items-center gap-3 text-xs text-mint-800/50">
-                            <span className="flex-1 h-px bg-mint-100" />or sign up with email<span className="flex-1 h-px bg-mint-100" />
-                        </div>
-
-                        <form onSubmit={submit} className="space-y-3" data-testid="register-form">
-                            <Field icon={UserIcon} type="text" placeholder="Full name" value={form.full_name} onChange={(v) => update("full_name", v)} required testid="reg-name" />
-                            <Field icon={Mail} type="email" placeholder="Email" value={form.email} onChange={(v) => update("email", v)} required testid="reg-email" />
-                            <Field icon={Phone} type="tel" placeholder="Phone (+91...)" value={form.phone} onChange={(v) => update("phone", v)} required testid="reg-phone" />
-
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">Password</label>
                             <div className="relative">
-                                <Lock size={16} className="absolute left-3.5 top-3.5 text-mint-700" />
-                                <input type={show ? "text" : "password"} value={form.password} onChange={(e) => update("password", e.target.value)} required
-                                    placeholder="Password" className="w-full rounded-xl border border-mint-100 bg-white/80 pl-10 pr-10 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" data-testid="reg-password" />
-                                <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-3 top-3 text-mint-700">{show ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                                <input type={show ? "text" : "password"} value={form.password}
+                                    onChange={(e) => update("password", e.target.value)} required
+                                    placeholder="Min 8 characters"
+                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 pr-11 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500"
+                                    data-testid="reg-password" />
+                                <button type="button" onClick={() => setShow((s) => !s)}
+                                    className="absolute right-3.5 top-3.5 text-mint-700/60">
+                                    {show ? <EyeOff size={17} /> : <Eye size={17} />}
+                                </button>
                             </div>
-                            <Field icon={Lock} type={show ? "text" : "password"} placeholder="Confirm password" value={form.confirm} onChange={(v) => update("confirm", v)} required testid="reg-confirm" />
-
                             {form.password && (
-                                <ul className="text-xs grid grid-cols-2 gap-y-1 text-mint-800/70" data-testid="password-checks">
+                                <ul className="mt-2 text-xs grid grid-cols-3 gap-y-1 text-mint-800/60" data-testid="password-checks">
                                     <Rule ok={checks.length}>8+ chars</Rule>
-                                    <Rule ok={checks.upper}>uppercase</Rule>
-                                    <Rule ok={checks.lower}>lowercase</Rule>
-                                    <Rule ok={checks.digit}>digit</Rule>
-                                    <Rule ok={checks.special}>special</Rule>
+                                    <Rule ok={checks.upper}>Uppercase</Rule>
+                                    <Rule ok={checks.lower}>Lowercase</Rule>
+                                    <Rule ok={checks.digit}>Digit</Rule>
+                                    <Rule ok={checks.special}>Special</Rule>
                                 </ul>
                             )}
+                        </div>
 
-                            {form.role === "doctor" && (
-                                <div className="mt-2 space-y-3 rounded-2xl bg-white/40 p-3 border border-mint-100/60" data-testid="doctor-extras">
-                                    <select value={form.hospital_id} onChange={(e) => update("hospital_id", e.target.value)} className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" data-testid="reg-hospital">
+                        <LabelField label="Confirm Password" type={show ? "text" : "password"} placeholder="Repeat password"
+                            value={form.confirm} onChange={(v) => update("confirm", v)} required testid="reg-confirm" />
+
+                        {/* Doctor extras */}
+                        {form.role === "doctor" && (
+                            <div className="space-y-4 rounded-2xl bg-mint-50/60 p-4 border border-mint-100" data-testid="doctor-extras">
+                                <p className="text-xs font-semibold uppercase tracking-widest text-mint-600">Doctor details</p>
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">Hospital</label>
+                                    <select value={form.hospital_id} onChange={(e) => update("hospital_id", e.target.value)}
+                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500"
+                                        data-testid="reg-hospital">
                                         <option value="">— Select hospital —</option>
                                         {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name} · {h.area}</option>)}
                                     </select>
-                                    <select value={form.specialization} onChange={(e) => update("specialization", e.target.value)} className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" data-testid="reg-specialty">
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">Specialization</label>
+                                    <select value={form.specialization} onChange={(e) => update("specialization", e.target.value)}
+                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500"
+                                        data-testid="reg-specialty">
                                         {SPECIALTIES.map((s) => <option key={s}>{s}</option>)}
                                     </select>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Field type="number" placeholder="Years exp." value={form.years_of_experience} onChange={(v) => update("years_of_experience", v)} testid="reg-exp" />
-                                        <Field type="number" placeholder="Consultation fee" value={form.consultation_fee} onChange={(v) => update("consultation_fee", v)} testid="reg-fee" />
-                                    </div>
-                                    <Field type="text" placeholder="Medical license number" value={form.license_number} onChange={(v) => update("license_number", v)} required testid="reg-license" />
-                                    <textarea rows={3} placeholder="Short bio / qualifications" value={form.bio} onChange={(e) => update("bio", e.target.value)}
-                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" data-testid="reg-bio" />
-                                    <Field type="url" placeholder="Profile photo URL (optional)" value={form.profile_photo_url} onChange={(v) => update("profile_photo_url", v)} testid="reg-photo" />
-                                    <p className="text-xs text-mint-800/60">Doctor accounts require admin approval before they are visible to patients.</p>
                                 </div>
-                            )}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <LabelField label="Years Experience" type="number" placeholder="5" value={form.years_of_experience}
+                                        onChange={(v) => update("years_of_experience", v)} testid="reg-exp" />
+                                    <LabelField label="Consultation Fee (₹)" type="number" placeholder="1000" value={form.consultation_fee}
+                                        onChange={(v) => update("consultation_fee", v)} testid="reg-fee" />
+                                </div>
+                                <LabelField label="Medical License Number" type="text" placeholder="MH-CARD-12001"
+                                    value={form.license_number} onChange={(v) => update("license_number", v)} required testid="reg-license" />
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">Bio</label>
+                                    <textarea rows={3} placeholder="Short bio / qualifications" value={form.bio}
+                                        onChange={(e) => update("bio", e.target.value)}
+                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"
+                                        data-testid="reg-bio" />
+                                </div>
+                                <p className="text-xs text-mint-800/50">Doctor accounts require admin approval before appearing to patients.</p>
+                            </div>
+                        )}
 
-                            <label className="flex items-start gap-2 text-xs text-mint-800/70">
-                                <input type="checkbox" checked={form.consent} onChange={(e) => update("consent", e.target.checked)} data-testid="reg-consent" className="mt-0.5 accent-mint-500" />
-                                <span>I consent to Sukhya Med storing my data securely and sharing relevant medical information with my chosen doctors.</span>
-                            </label>
+                        <label className="flex items-start gap-2.5 text-xs text-mint-800/60 cursor-pointer">
+                            <input type="checkbox" checked={form.consent} onChange={(e) => update("consent", e.target.checked)}
+                                data-testid="reg-consent" className="mt-0.5 accent-mint-500 w-4 h-4" />
+                            <span>I consent to Sukhya Med storing my data securely and sharing relevant medical information with my chosen doctors.</span>
+                        </label>
 
-                            {error && <p className="text-sm text-red-600" data-testid="register-error">{error}</p>}
-                            <button type="submit" disabled={busy} className="w-full btn-pill btn-primary disabled:opacity-60" data-testid="register-submit">
-                                {busy ? "Creating account…" : <>Create account <ArrowRight size={18} /></>}
-                            </button>
-                        </form>
+                        {error && <p className="text-sm text-red-500" data-testid="register-error">{error}</p>}
 
-                        <p className="mt-5 text-sm text-mint-800/70">
-                            Already with us?{" "}
-                            <Link to="/login" className="text-mint-600 font-medium hover:underline" data-testid="link-login">Sign in</Link>
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div className="hidden lg:block relative">
-                <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=1400&q=80" alt="" className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-br from-mint-500/30 via-mint-100/20 to-white/60" />
-                <div className="absolute bottom-12 left-12 right-12 glass rounded-2xl p-6">
-                    <span className="overline">For doctors & patients</span>
-                    <p className="editorial text-2xl text-mint-800 mt-2 leading-snug">
-                        Premium, AI-enhanced healthcare — for both sides of the consultation.
+                        <button type="submit" disabled={busy}
+                            className="w-full rounded-full bg-mint-500 hover:bg-mint-600 text-white font-semibold py-4 text-sm transition disabled:opacity-60 shadow-[0_4px_18px_rgba(52,196,114,0.35)]"
+                            data-testid="register-submit">
+                            {busy ? "Creating account…" : "Create account →"}
+                        </button>
+                    </form>
+
+                    <p className="mt-6 text-center text-sm text-mint-800/50">
+                        Already with us?{" "}
+                        <Link to="/login" className="text-mint-600 font-medium hover:underline" data-testid="link-login-bottom">Sign in</Link>
                     </p>
                 </div>
             </div>
@@ -174,16 +231,18 @@ export default function Register() {
     );
 }
 
-function Field({ icon: Icon, type, value, onChange, placeholder, testid, required }) {
+function LabelField({ label, type, value, onChange, placeholder, testid, required }) {
     return (
-        <div className="relative">
-            {Icon && <Icon size={16} className="absolute left-3.5 top-3.5 text-mint-700" />}
-            <input type={type} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} required={required}
-                className={`w-full rounded-xl border border-mint-100 bg-white/80 ${Icon ? "pl-10" : "pl-4"} pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500`}
+        <div>
+            {label && <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">{label}</label>}
+            <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder} required={required}
+                className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500"
                 data-testid={testid} />
         </div>
     );
 }
+
 function Rule({ ok, children }) {
-    return <li className={ok ? "text-mint-600" : "text-red-500"}>{ok ? "✓" : "•"} {children}</li>;
+    return <li className={ok ? "text-mint-600" : "text-red-400"}>{ok ? "✓" : "•"} {children}</li>;
 }
