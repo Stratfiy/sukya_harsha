@@ -65,43 +65,7 @@ export default function About() {
                 </div>
             </section>
 
-            {/* Founder */}
-            <section className="mx-auto max-w-7xl px-6 pb-24">
-                <span className="overline">The Team</span>
-                <h2 className="mt-4 text-4xl sm:text-5xl text-mint-800 mb-14">
-                    The people <em className="italic text-mint-600">behind it</em>.
-                </h2>
-
-                <div className="space-y-12">
-                    {/* Founder card */}
-                    <div className="grid md:grid-cols-12 gap-8 items-center glass rounded-3xl p-8">
-                        <div className="md:col-span-3">
-                            <div className="aspect-square rounded-2xl bg-mint-800 flex items-center justify-center">
-                                <span className="text-white text-7xl font-bold" style={{ fontFamily: "Outfit, sans-serif" }}>N</span>
-                            </div>
-                            <div className="mt-3 inline-block px-3 py-1 rounded-full bg-mint-600/10 border border-mint-600/20 text-xs font-semibold text-mint-600 uppercase tracking-wider">
-                                Founder
-                            </div>
-                        </div>
-                        <div className="md:col-span-9">
-                            <p className="overline mb-2">Nithish · Founder & CEO</p>
-                            <h3 className="editorial text-3xl sm:text-4xl text-mint-800 leading-tight">
-                                Navi Mumbai. Built Sukhya Med to make finding a doctor as easy as finding a restaurant.
-                            </h3>
-                            <p className="mt-4 text-mint-800/70 text-sm leading-relaxed">
-                                Started in Vashi, Navi Mumbai — because that's where the problem lives. Watched family members
-                                struggle to find the right specialist in the right hospital at the right time. Built Sukhya Med
-                                to fix that, one appointment at a time.
-                            </p>
-                            <a href="mailto:hello@sukhya.com"
-                                className="mt-5 btn-pill btn-primary inline-flex text-sm">
-                                Talk to Nithish <ArrowRight size={15} />
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
+           
             {/* Values */}
             <section className="mx-auto max-w-7xl px-6 pb-24">
                 <span className="overline">What we stand for</span>
