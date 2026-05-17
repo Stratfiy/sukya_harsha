@@ -61,7 +61,6 @@ export default function Navbar() {
                     ) : (
                         <>
                             <Link to="/login" className="btn-pill btn-ghost text-sm" data-testid="navbar-login">Sign in</Link>
-                            <Link to="/register" className="btn-pill btn-primary text-sm" data-testid="navbar-register">Get started</Link>
                         </>
                     )}
                 </div>
