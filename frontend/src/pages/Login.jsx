@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Eye, EyeOff, Mail, Lock, ArrowRight, ShieldCheck, Activity } from "lucide-react";
+import { Eye, EyeOff, Activity } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import GoogleButton from "../components/GoogleButton";
 
@@ -42,100 +42,123 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-screen grid lg:grid-cols-2">
-            <div className="flex flex-col px-8 sm:px-16 py-10">
+        <div className="min-h-screen bg-white" style={{
+            backgroundImage: "radial-gradient(circle at 0% 0%, rgba(52,196,114,0.10), transparent 50%), radial-gradient(circle at 100% 0%, rgba(212,245,226,0.5), transparent 50%)"
+        }}>
+            {/* Navbar */}
+            <div className="flex items-center justify-between px-8 py-5">
                 <Link to="/" className="flex items-center gap-2.5" data-testid="auth-logo">
-                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-600 text-white shadow-[0_4px_18px_rgba(52,196,114,0.4)]">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white shadow-[0_4px_18px_rgba(52,196,114,0.4)]">
                         <Activity size={18} strokeWidth={2.4} />
                     </div>
                     <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
                 </Link>
-                <div className="flex-1 grid place-items-center">
-                    <div className="w-full max-w-md glass-mint rounded-3xl p-8 sm:p-10 animate-fade-up">
-                        {!twofaToken ? (
-                            <>
+                <p className="text-sm text-mint-800/60">
+                    Don't have an account?{" "}
+                    <Link to="/register" className="text-mint-600 font-medium hover:underline" data-testid="link-register">
+                        Sign up
+                    </Link>
+                </p>
+            </div>
+
+            {/* Main content */}
+            <div className="flex flex-col items-center justify-center px-6 py-12">
+                <div className="w-full max-w-md">
+
+                    {!twofaToken ? (
+                        <>
+                            {/* Heading */}
+                            <div className="mb-8">
                                 <span className="overline">Welcome back</span>
-                                <h1 className="editorial mt-2 text-4xl text-mint-800">Sign in</h1>
-                                <p className="mt-2 text-sm text-mint-800/70">Premium care, one click away.</p>
+                                <h1 className="editorial mt-2 text-5xl text-mint-800 leading-tight">
+                                    Sign in to your<br />
+                                    <em className="text-mint-500 italic">dashboard.</em>
+                                </h1>
+                                <p className="mt-3 text-mint-800/60 text-sm">Premium care, one click away.</p>
+                            </div>
 
-                                <div className="mt-6"><GoogleButton onSuccess={(r) => redirectAfter(r.user?.role || "patient")} onError={(e) => setError(e)} /></div>
-                                <div className="my-5 flex items-center gap-3 text-xs text-mint-800/50">
-                                    <span className="flex-1 h-px bg-mint-100" />or sign in with email<span className="flex-1 h-px bg-mint-100" />
+                            {/* Google */}
+                            <div className="mb-5">
+                                <GoogleButton role="patient" onSuccess={() => nav("/")} onError={setError} />
+                            </div>
+
+                            <div className="flex items-center gap-3 mb-5 text-xs text-mint-800/40">
+                                <span className="flex-1 h-px bg-mint-100" />or sign in with email<span className="flex-1 h-px bg-mint-100" />
+                            </div>
+
+                            {/* Form */}
+                            <form onSubmit={submit} className="space-y-4" data-testid="login-form">
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">Email</label>
+                                    <input
+                                        type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="you@email.com" required
+                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 transition"
+                                        data-testid="login-email"
+                                    />
                                 </div>
-
-                                <form onSubmit={submit} className="space-y-4" data-testid="login-form">
-                                    <Input icon={Mail} type="email" value={email} onChange={setEmail} placeholder="you@email.com" testid="login-email" required />
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-xs font-semibold uppercase tracking-widest text-mint-800/50">Password</label>
+                                        <Link to="/forgot-password" className="text-xs text-mint-600 hover:underline" data-testid="forgot-link">
+                                            Forgot password?
+                                        </Link>
+                                    </div>
                                     <div className="relative">
-                                        <Input icon={Lock} type={show ? "text" : "password"} value={password} onChange={setPassword} placeholder="Your password" testid="login-password" required />
-                                        <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-3 top-3 text-mint-700" data-testid="toggle-password">
-                                            {show ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        <input
+                                            type={show ? "text" : "password"} value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            placeholder="Your password" required
+                                            className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 pr-11 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 transition"
+                                            data-testid="login-password"
+                                        />
+                                        <button type="button" onClick={() => setShow((s) => !s)}
+                                            className="absolute right-3.5 top-3.5 text-mint-700/60 hover:text-mint-700">
+                                            {show ? <EyeOff size={17} /> : <Eye size={17} />}
                                         </button>
                                     </div>
-                                    <div className="flex items-center justify-between text-xs">
-                                        <span />
-                                        <Link to="/forgot-password" className="text-mint-600 hover:underline" data-testid="link-forgot">Forgot password?</Link>
-                                    </div>
-                                    {error && <p className="text-sm text-red-600" data-testid="login-error">{error}</p>}
-                                    <button type="submit" disabled={busy} className="w-full btn-pill btn-primary disabled:opacity-60" data-testid="login-submit">
-                                        {busy ? "Signing in…" : <>Sign in <ArrowRight size={18} /></>}
-                                    </button>
-                                </form>
+                                </div>
 
-                                <p className="mt-6 text-sm text-mint-800/70">
-                                    New here?{" "}
-                                    <Link to="/register" className="text-mint-600 font-medium hover:underline" data-testid="link-register">Create an account</Link>
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <div className="flex items-center gap-2"><ShieldCheck size={18} className="text-mint-600" /><span className="overline">Two-factor auth</span></div>
-                                <h1 className="editorial mt-2 text-3xl text-mint-800">Enter your 6-digit code</h1>
-                                <p className="mt-2 text-sm text-mint-800/70">Open your authenticator app and paste the current code.</p>
-                                <form onSubmit={submit2fa} className="mt-6 space-y-4" data-testid="2fa-form">
+                                {error && <p className="text-sm text-red-500" data-testid="login-error">{error}</p>}
+
+                                <button type="submit" disabled={busy}
+                                    className="w-full rounded-full bg-mint-500 hover:bg-mint-600 text-white font-semibold py-4 text-sm transition disabled:opacity-60 shadow-[0_4px_18px_rgba(52,196,114,0.35)]"
+                                    data-testid="login-submit">
+                                    {busy ? "Signing in…" : "Sign in →"}
+                                </button>
+                            </form>
+                        </>
+                    ) : (
+                        <>
+                            <div className="mb-8">
+                                <span className="overline">Two-factor authentication</span>
+                                <h1 className="editorial mt-2 text-4xl text-mint-800">Enter your code.</h1>
+                                <p className="mt-2 text-sm text-mint-800/60">Open your authenticator app and enter the 6-digit code.</p>
+                            </div>
+                            <form onSubmit={submit2fa} className="space-y-4" data-testid="2fa-form">
+                                <div>
+                                    <label className="block text-xs font-semibold uppercase tracking-widest text-mint-800/50 mb-1.5">6-digit code</label>
                                     <input
-                                        value={code}
-                                        onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                                        placeholder="123456"
-                                        inputMode="numeric"
-                                        className="w-full text-center tracking-[0.5em] text-2xl font-mono rounded-xl border border-mint-100 bg-white/80 px-4 py-4 outline-none focus:ring-2 focus:ring-mint-500"
+                                        type="text" value={code} onChange={(e) => setCode(e.target.value)}
+                                        maxLength={6} placeholder="000000" required
+                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 text-center tracking-[0.5em] text-lg"
                                         data-testid="2fa-code"
                                     />
-                                    {error && <p className="text-sm text-red-600">{error}</p>}
-                                    <button type="submit" disabled={busy || code.length !== 6} className="w-full btn-pill btn-primary disabled:opacity-60" data-testid="2fa-submit">
-                                        {busy ? "Verifying…" : "Verify & continue"}
-                                    </button>
-                                    <button type="button" onClick={() => setTwofaToken(null)} className="w-full text-sm text-mint-600 hover:underline" data-testid="2fa-cancel">Back to sign-in</button>
-                                </form>
-                            </>
-                        )}
-                    </div>
+                                </div>
+                                {error && <p className="text-sm text-red-500">{error}</p>}
+                                <button type="submit" disabled={busy}
+                                    className="w-full rounded-full bg-mint-500 hover:bg-mint-600 text-white font-semibold py-4 text-sm transition disabled:opacity-60 shadow-[0_4px_18px_rgba(52,196,114,0.35)]">
+                                    {busy ? "Verifying…" : "Verify →"}
+                                </button>
+                                <button type="button" onClick={() => setTwofaToken(null)}
+                                    className="w-full text-sm text-mint-800/50 hover:underline">
+                                    ← Back to login
+                                </button>
+                            </form>
+                        </>
+                    )}
                 </div>
             </div>
-            <div className="hidden lg:block relative">
-                <img src="https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?w=1400&q=80" alt="" className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-br from-mint-500/30 via-mint-100/20 to-white/60" />
-                <div className="absolute bottom-12 left-12 right-12 glass rounded-2xl p-6">
-                    <span className="overline">Trusted by hospitals</span>
-                    <p className="editorial text-2xl text-mint-800 mt-2 leading-snug">
-                        "Sukhya Med brought our outpatient flow into the future — patients adore it."
-                    </p>
-                    <p className="text-xs text-mint-800/60 mt-3">— Dr. Aanya Sharma · Apollo Hospitals</p>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function Input({ icon: Icon, type, value, onChange, placeholder, testid, required }) {
-    return (
-        <div className="relative">
-            <Icon size={16} className="absolute left-3.5 top-3.5 text-mint-700" />
-            <input
-                type={type} value={value} onChange={(e) => onChange(e.target.value)}
-                placeholder={placeholder} required={required}
-                className="w-full rounded-xl border border-mint-100 bg-white/80 pl-10 pr-10 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"
-                data-testid={testid}
-            />
         </div>
     );
 }
