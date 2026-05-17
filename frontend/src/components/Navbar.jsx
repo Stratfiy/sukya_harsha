@@ -25,7 +25,6 @@ export default function Navbar() {
     const navItems = [
         { to: "/", label: "Home", end: true, testid: "nav-home" },
         { to: "/about", label: "About", testid: "nav-about" },
-        { to: "/services", label: "What We Provide", testid: "nav-services" },
         ...(!user || user.role === "patient" ? [{ to: "/find-doctors", label: "Find Doctors", testid: "nav-find-doctors" }] : []),
     ];
 
