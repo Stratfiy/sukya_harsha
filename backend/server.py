@@ -29,7 +29,6 @@ from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 from google_auth_oauthlib.flow import Flow
@@ -51,7 +50,7 @@ ACCESS_TOKEN_MIN = 15
 REFRESH_TOKEN_DAYS = 7
 CSRF_SECRET = os.environ["CSRF_SECRET"]
 FERNET = Fernet(os.environ["FERNET_KEY"].encode())
-EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
@@ -1203,9 +1202,32 @@ async def ai_chat(req: ChatRequest, request: Request, user: dict = Depends(get_c
         "Never prescribe medications. For severe symptoms, urge them to book a consultation or visit an ER."
     )
     try:
-        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=session_id, system_message=system_message)\
-            .with_model("anthropic", "claude-sonnet-4-5-20250929")
-        reply = await chat.send_message(UserMessage(text=req.message))
+        history = await db.ai_messages.find({"session_id": session_id}, {"_id": 0}).sort("created_at", 1).to_list(20)
+        messages = []
+        for msg in history:
+            messages.append({"role": "user", "content": msg["user_message"]})
+            messages.append({"role": "assistant", "content": msg["assistant_reply"]})
+        messages.append({"role": "user", "content": req.message})
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1024,
+                    "system": system_message,
+                    "messages": messages,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            reply = data["content"][0]["text"]
+
         await db.ai_messages.insert_one({
             "id": str(uuid.uuid4()),
             "session_id": session_id, "user_id": user["id"],
@@ -1221,7 +1243,6 @@ async def ai_chat(req: ChatRequest, request: Request, user: dict = Depends(get_c
 @api.get("/ai/history")
 async def ai_history(user: dict = Depends(get_current_user)):
     return await db.ai_messages.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", 1).to_list(200)
-
 
 # ---------------- Misc ----------------
 @api.get("/")
