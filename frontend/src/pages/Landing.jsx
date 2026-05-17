@@ -1,15 +1,15 @@
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
-import { CalendarCheck, ShieldCheck, Sparkles, Stethoscope, Hospital, ArrowRight, Activity, Lock, Star, Search } from "lucide-react";
+import { CalendarCheck, ShieldCheck, Sparkles, Stethoscope, Hospital, ArrowRight, Activity, Search } from "lucide-react";
 
 const features = [
     { icon: Search, title: "Find by Area", body: "Pick your neighbourhood — see hospitals & doctors near you instantly." },
     { icon: Hospital, title: "Hospital Network", body: "Apollo, Fortis, MGM, Cloudnine, Jupiter — vetted partners across the city." },
-    { icon: Stethoscope, title: "Vetted Specialists", body: "Every doctor is admin-approved with license verification." },
-    { icon: CalendarCheck, title: "Smart Booking", body: "Calendly-style slot picker that respects each doctor's schedule and mode." },
-    { icon: Sparkles, title: "AI Health Assistant", body: "Claude Sonnet 4.5 helps you understand symptoms and pick the right specialist." },
-    { icon: ShieldCheck, title: "Bank-grade Security", body: "JWT cookies, bcrypt, 2FA for doctors & admins, CSRF, audit logs." },
+    { icon: Stethoscope, title: "Vetted Specialists", body: "Every doctor is admin-approved with license verification before they ever see a patient." },
+    { icon: CalendarCheck, title: "Smart Booking", body: "Calendly-style slot picker that respects each doctor's schedule." },
+    { icon: Sparkles, title: "AI Health Assistant", body: "Claude Sonnet helps you understand symptoms and pick the right specialist." },
+    { icon: ShieldCheck, title: "Secure & Private", body: "Your medical data is encrypted, audit-logged, and never shared without consent." },
 ];
 
 export default function Landing() {
@@ -41,10 +41,6 @@ export default function Landing() {
                                 Find a doctor
                             </Link>
                         </div>
-                        <div className="mt-10 flex items-center gap-6 text-sm text-mint-800/70">
-                            <div className="flex items-center gap-2"><Lock size={16} className="text-mint-600" /> JWT + bcrypt + 2FA</div>
-                            <div className="flex items-center gap-2"><Star size={16} className="text-mint-600" /> 4.9 average rating</div>
-                        </div>
                     </div>
                     <div className="lg:col-span-5 relative h-[520px]">
                         <img
@@ -61,7 +57,7 @@ export default function Landing() {
                         <div className="absolute bottom-6 right-0 glass-mint rounded-2xl p-4 w-60 animate-float [animation-delay:1.5s]">
                             <p className="overline">Today · 10:30</p>
                             <p className="text-sm text-mint-800 mt-1.5 leading-snug">Dr. Aanya Sharma · Cardiology · Apollo Hospitals</p>
-                            <div className="mt-2 flex items-center gap-2 text-xs text-mint-700"><CalendarCheck size={14} /> Online consultation</div>
+                            <div className="mt-2 flex items-center gap-2 text-xs text-mint-700"><CalendarCheck size={14} /> Appointment confirmed</div>
                         </div>
                     </div>
                 </div>
@@ -77,7 +73,7 @@ export default function Landing() {
                 <div className="mt-14 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {features.map((f, i) => (
                         <div key={f.title} className="glass rounded-2xl p-6 hover:-translate-y-1 transition-transform duration-300" data-testid={`feature-${i}`}>
-                            <div className="grid h-11 w-11 place-items-center rounded-xl bg-mint-500 text-white">
+                            <div className="grid h-11 w-11 place-items-center rounded-xl bg-mint-600 text-white">
                                 <f.icon size={20} strokeWidth={1.8} />
                             </div>
                             <h3 className="editorial mt-5 text-2xl text-mint-800">{f.title}</h3>
