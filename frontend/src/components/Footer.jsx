@@ -1,4 +1,5 @@
 import { Activity, MapPin, Mail, Phone } from "lucide-react";
+import { Link } from "react-router-dom";
 
 export default function Footer() {
     return (
@@ -6,7 +7,7 @@ export default function Footer() {
             <div className="mx-auto max-w-7xl px-6 py-12 grid md:grid-cols-4 gap-10">
                 <div className="md:col-span-2">
                     <div className="flex items-center gap-2.5">
-                        <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white">
+                        <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-600 text-white">
                             <Activity size={18} strokeWidth={2.4} />
                         </div>
                         <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
@@ -19,23 +20,23 @@ export default function Footer() {
                 <div>
                     <p className="overline mb-3">Platform</p>
                     <ul className="space-y-2 text-sm text-mint-800/70">
-                        <li>Find Doctors</li>
-                        <li>About</li>
-                        <li>What We Provide</li>
-                        <li>AI Health Assistant</li>
+                        <li><Link to="/find-doctors" className="hover:text-mint-600 transition">Find Doctors</Link></li>
+                        <li><Link to="/about" className="hover:text-mint-600 transition">About Us</Link></li>
+                        <li><Link to="/register" className="hover:text-mint-600 transition">Create Account</Link></li>
+                        <li><Link to="/login" className="hover:text-mint-600 transition">Sign In</Link></li>
                     </ul>
                 </div>
                 <div>
                     <p className="overline mb-3">Reach us</p>
                     <ul className="space-y-2 text-sm text-mint-800/70">
                         <li className="flex items-center gap-2"><MapPin size={14} /> Navi Mumbai, India</li>
-                        <li className="flex items-center gap-2"><Mail size={14} /> hello@sukhyamed.com</li>
+                        <li className="flex items-center gap-2"><Mail size={14} /> hello@sukhya.com</li>
                         <li className="flex items-center gap-2"><Phone size={14} /> +91-22-0000-0000</li>
                     </ul>
                 </div>
             </div>
             <div className="border-t border-mint-100/60 py-6 text-center text-xs text-mint-800/50">
-                © {new Date().getFullYear()} Sukhya Med · HIPAA-aligned · JWT + bcrypt + 2FA secure.
+                © {new Date().getFullYear()} Sukhya Med · All rights reserved.
             </div>
         </footer>
     );
