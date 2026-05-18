@@ -154,7 +154,7 @@ def set_session_cookies(response: Response, access: str, refresh: str):
     # CSRF token — readable by JS (NOT httpOnly), double-submit pattern
     csrf = secrets.token_urlsafe(32)
     response.set_cookie("csrf_token", csrf, max_age=REFRESH_TOKEN_DAYS * 86400,
-                        httponly=False, secure=True, samesite="lax", path="/")
+                        httponly=False, secure=True, samesite="none", path="/")
 
 
 def clear_session_cookies(response: Response):
