@@ -60,7 +60,7 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 resend.api_key = RESEND_API_KEY
 
 # Cookies are same-origin behind ingress so use samesite=lax. secure=True for HTTPS preview.
-COOKIE_OPTS = dict(httponly=True, secure=True, samesite="lax", path="/")
+COOKIE_OPTS = dict(httponly=True, secure=True, samesite="none", path="/")
 
 # ---------------- App ----------------
 limiter = Limiter(key_func=get_remote_address)
