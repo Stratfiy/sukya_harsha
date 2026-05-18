@@ -271,7 +271,7 @@ export default function PatientDashboard() {
                                                 <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
                                             </button>
                                             <button onClick={() => cancel(a.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-red-200 text-red-500 text-xs hover:bg-red-50 transition"
+                                                cclassName="flex items-center gap-1 px-3 py-1.5 rounded-full border border-mint-200 text-mint-700 text-xs hover:bg-mint-50 transition"
                                                 data-testid={`cancel-${a.id}`}>
                                                 <X size={12} /> Cancel
                                             </button>
