@@ -1,567 +1,576 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { Link } from "react-router-dom";
+import api from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import {
+    Calendar, FileText, Sparkles, X, Search, Heart,
+    Clock, User, Download, Star, Activity, MapPin,
+    ChevronDown, ChevronUp, AlertCircle, Pill, Stethoscope,
+    ArrowRight, LogOut, Menu, Home
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-const today = new Date().toISOString().slice(0, 10);
-
-function nextDays(n) {
-  const out = [];
-  const d = new Date(); d.setHours(0,0,0,0);
-  for (let i = 0; i < n; i++) {
-    const c = new Date(d); c.setDate(c.getDate() + i);
-    out.push({ iso: `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,"0")}-${String(c.getDate()).padStart(2,"0")}`, label: c.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) });
-  }
-  return out;
+// ─── PDF Generator ────────────────────────────────────────────────────────────
+function generatePrescriptionPDF(prescription) {
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"/>
+<title>Prescription - ${prescription.diagnosis}</title>
+<style>
+  body{font-family:Georgia,serif;color:#0a2518;margin:0;padding:40px;background:#fff}
+  .header{border-bottom:3px solid #1F8A4D;padding-bottom:20px;margin-bottom:30px;display:flex;justify-content:space-between;align-items:flex-start}
+  .logo{font-size:28px;font-weight:400;color:#0a2518}.logo span{color:#1F8A4D;font-style:italic}
+  .meta{text-align:right;font-size:12px;color:#4A6E59}
+  .section-title{font-size:11px;text-transform:uppercase;letter-spacing:.2em;color:#1F8A4D;font-weight:700;margin-bottom:8px;font-family:Arial,sans-serif}
+  .diagnosis{font-size:22px;font-weight:400;color:#0a2518;margin-bottom:6px}
+  .doctor-info{font-size:13px;color:#4A6E59;margin-bottom:30px}
+  .rx{font-size:32px;color:#1F8A4D;font-style:italic;margin-bottom:15px}
+  .med-table{width:100%;border-collapse:collapse;margin-bottom:30px}
+  .med-table th{background:#EEFBF3;padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#4A6E59;font-family:Arial,sans-serif;font-weight:600}
+  .med-table td{padding:12px;border-bottom:1px solid #EEFBF3;font-size:13px}
+  .med-name{font-weight:600;color:#0a2518}
+  .notes-box{background:#EEFBF3;border-radius:8px;padding:16px;margin-bottom:30px;font-size:13px;color:#4A6E59}
+  .sig-line{border-top:1px solid #0a2518;width:180px;padding-top:6px;font-size:12px;color:#0a2518;margin-top:40px}
+  .warning{font-size:10px;color:#999;margin-top:20px;border-top:1px dashed #ddd;padding-top:12px}
+  .footer{border-top:1px solid #D4F5E2;padding-top:20px;font-size:11px;color:#4A6E59;display:flex;justify-content:space-between}
+</style></head><body>
+<div class="header">
+  <div><div class="logo">Sukhya <span>Med</span></div><div style="font-size:12px;color:#4A6E59;margin-top:4px">sukhya.com · hello@sukhya.com</div></div>
+  <div class="meta"><div><strong>Date:</strong> ${new Date(prescription.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div><div><strong>ID:</strong> ${prescription.id.slice(0,8).toUpperCase()}</div></div>
+</div>
+<div class="section-title">Diagnosis</div>
+<div class="diagnosis">${prescription.diagnosis}</div>
+<div class="doctor-info">Prescribed by <strong>${prescription.doctor_name}</strong></div>
+<div class="rx">℞</div>
+<table class="med-table">
+  <tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr>
+  ${(prescription.medications||[]).map(m=>`<tr><td class="med-name">${m.name}</td><td>${m.dosage}</td><td>${m.frequency}</td><td>${m.duration}</td></tr>`).join("")}
+</table>
+${prescription.additional_notes?`<div class="section-title">Notes</div><div class="notes-box">${prescription.additional_notes}</div>`:""}
+<div class="sig-line">${prescription.doctor_name}<br/>Sukhya Med Verified Doctor</div>
+<div class="warning">This prescription is valid for the patient on record only. Always consult your doctor before altering any medication.</div>
+<div class="footer"><span>© ${new Date().getFullYear()} Sukhya Med</span><span>${new Date(prescription.created_at).toLocaleString("en-IN")}</span></div>
+</body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `prescription-${prescription.id.slice(0,6)}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
-const HOSPITALS = [
-  { id: "h1", name: "Apollo Hospitals Navi Mumbai", area: "Nerul", city: "Navi Mumbai", pin: "400706", specialties: ["Cardiology","Neurology","Orthopedics","General Medicine"], doctors: 2, img: "https://images.unsplash.com/photo-1586773860418-d37222d8fce3?w=600&q=80" },
-  { id: "h2", name: "Fortis Hiranandani", area: "Vashi", city: "Navi Mumbai", pin: "400703", specialties: ["Cardiology","Dermatology","Gynecology","Pediatrics"], doctors: 1, img: "https://images.unsplash.com/photo-1551601651-2a8555f1a136?w=600&q=80" },
-  { id: "h3", name: "MGM New Bombay Hospital", area: "Koparkhairane", city: "Navi Mumbai", pin: "400709", specialties: ["Pediatrics","General Medicine","ENT","Ophthalmology"], doctors: 2, img: "https://images.unsplash.com/photo-1538108149393-fbbd81895907?w=600&q=80" },
-  { id: "h4", name: "Cloudnine Panvel", area: "Panvel", city: "Navi Mumbai", pin: "410206", specialties: ["Gynecology","Pediatrics"], doctors: 1, img: "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=600&q=80" },
-  { id: "h5", name: "Jupiter Hospital Thane", area: "Thane West", city: "Thane", pin: "400601", specialties: ["Neurology","Psychiatry","Orthopedics","Dentistry"], doctors: 2, img: "https://images.unsplash.com/photo-1504439468489-c8920d796a29?w=600&q=80" },
-];
-
-const DOCTORS = [
-  { id: "d1", name: "Dr. Aanya Sharma", spec: "Cardiology", hospital_id: "h1", exp: 12, fee: 2200, bio: "Interventional cardiologist focused on preventive cardiology and complex angioplasty.", photo: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=300&q=80", online: true, slots: { [today]: ["10:00","10:30","11:00","15:00","15:30","16:00"], "2026-05-17": ["10:00","10:30","11:00","11:30","15:00","15:30"] } },
-  { id: "d2", name: "Dr. Kabir Singh", spec: "Orthopedics", hospital_id: "h1", exp: 15, fee: 2300, bio: "Orthopedic surgeon specialising in joint replacement and sports injuries.", photo: "https://images.unsplash.com/photo-1537368910025-700350fe46c7?w=300&q=80", online: false, slots: { [today]: ["10:00","11:00","11:30"], "2026-05-17": ["10:00","10:30","15:00","15:30","16:00"] } },
-  { id: "d3", name: "Dr. Rohan Mehta", spec: "Dermatology", hospital_id: "h2", exp: 9, fee: 1800, bio: "Cosmetic and clinical dermatologist. Expert in acne, pigmentation and laser.", photo: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=300&q=80", online: true, slots: { [today]: ["10:00","10:30","15:00"], "2026-05-17": ["10:00","10:30","11:00","15:00","15:30","16:00","16:30"] } },
-  { id: "d4", name: "Dr. Priya Iyer", spec: "Pediatrics", hospital_id: "h3", exp: 14, fee: 1500, bio: "Pediatrician with expertise in newborn care, developmental issues and adolescent health.", photo: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=300&q=80", online: true, slots: { [today]: ["10:00","10:30","11:00","15:00","15:30"], "2026-05-17": ["10:00","15:00","15:30","16:00"] } },
-  { id: "d5", name: "Dr. Daniel Joseph", spec: "General Medicine", hospital_id: "h3", exp: 8, fee: 1200, bio: "Family physician offering primary care, preventive checks and chronic disease management.", photo: "https://images.unsplash.com/photo-1582750433449-648ed127bb54?w=300&q=80", online: true, slots: { [today]: ["10:00","10:30","11:00","11:30","15:00","15:30","16:00","16:30"], "2026-05-17": ["10:00","10:30","11:00"] } },
-  { id: "d6", name: "Dr. Sara Khan", spec: "Gynecology", hospital_id: "h4", exp: 11, fee: 2000, bio: "Obstetrician & gynecologist specializing in high-risk pregnancies and women's wellness.", photo: "https://images.unsplash.com/photo-1607746882042-944635dfe10e?w=300&q=80", online: true, slots: { [today]: ["10:00","10:30","15:00","15:30"], "2026-05-17": ["10:00","10:30","11:00","15:00","15:30","16:00"] } },
-  { id: "d7", name: "Dr. Arjun Kapoor", spec: "Neurology", hospital_id: "h5", exp: 18, fee: 2500, bio: "Senior neurologist treating epilepsy, stroke recovery and movement disorders.", photo: "https://images.unsplash.com/photo-1622253692010-333f2da6031d?w=300&q=80", online: false, slots: { [today]: ["10:00","10:30"], "2026-05-17": ["10:00","10:30","11:00","15:00"] } },
-  { id: "d8", name: "Dr. Meera Reddy", spec: "Psychiatry", hospital_id: "h5", exp: 10, fee: 1900, bio: "Psychiatrist focused on mood disorders, anxiety and cognitive behavioural therapy.", photo: "https://images.unsplash.com/photo-1551836022-deb4988cc6c0?w=300&q=80", online: true, slots: { [today]: ["10:00","15:00","15:30","16:00"], "2026-05-17": ["10:00","10:30","15:00","15:30","16:00","16:30","17:00"] } },
-];
-
-const AREAS = [...new Set(HOSPITALS.map(h => h.area))];
-
-const MOCK_APPTS = [
-  { id: "ma1", doctor_name: "Dr. Aanya Sharma", hospital: "Apollo Hospitals Navi Mumbai", spec: "Cardiology", date: today, time: "15:00", type: "online", status: "booked", photo: "https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=100&q=80" },
-  { id: "ma2", doctor_name: "Dr. Priya Iyer", hospital: "MGM New Bombay Hospital", spec: "Pediatrics", date: "2026-05-14", time: "10:30", type: "offline", status: "completed", photo: "https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=100&q=80" },
-];
-
-const MOCK_RX = [
-  { id: "rx1", doctor: "Dr. Aanya Sharma", date: "2026-05-14", diagnosis: "Mild hypertension", meds: [{ name: "Amlodipine", dosage: "5mg", freq: "Once daily", dur: "30 days" }] },
-];
-
-const STATUS_COLORS = { booked: "bg-[#34C472]/10 text-[#34C472] border border-[#34C472]/20", completed: "bg-[#0A2518]/5 text-[#0A2518]/50", cancelled: "bg-red-50 text-red-500" };
-
-function Icon({ name, size = 18 }) {
-  const icons = {
-    search: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-    pin: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
-    arrow: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
-    back: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>,
-    calendar: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>,
-    clock: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
-    video: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>,
-    star: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
-    pill: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 1.5 3 3L5 13l-3-3z"/><path d="m13.5 4.5 3 3"/><path d="M15.5 2.5a2.12 2.12 0 0 1 3 3L10 14l-3-3z"/></svg>,
-    x: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-    check: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>,
-    building: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M8 10h.01M16 10h.01M12 14h.01M8 14h.01M16 14h.01"/></svg>,
-    user: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-    briefcase: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>,
-  };
-  return icons[name] || null;
+function countdown(dateStr, timeStr) {
+    const target = new Date(`${dateStr}T${timeStr}:00`);
+    const diff = target - new Date();
+    if (diff <= 0) return null;
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    if (days > 0) return `in ${days}d ${hours}h`;
+    if (hours > 0) return `in ${hours}h ${mins}m`;
+    return `in ${mins}m`;
 }
 
-function GlassCard({ children, className = "", ...props }) {
-  return <div className={`bg-white/60 backdrop-blur-xl border border-white/40 rounded-2xl shadow-[0_8px_32px_rgba(52,196,114,0.08)] ${className}`} {...props}>{children}</div>;
-}
-
-export default function PatientDashboard() {
-  const [view, setView] = useState("home");
-  const [selectedArea, setSelectedArea] = useState("");
-  const [searchQ, setSearchQ] = useState("");
-  const [selectedHospital, setSelectedHospital] = useState(null);
-  const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [bookingDate, setBookingDate] = useState(today);
-  const [bookingSlot, setBookingSlot] = useState(null);
-  const [bookingType, setBookingType] = useState("offline");
-  const [bookingReason, setBookingReason] = useState("");
-  const [myAppts, setMyAppts] = useState(MOCK_APPTS);
-  const [toast, setToast] = useState(null);
-  const [showConfirmation, setShowConfirmation] = useState(null);
-
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
-  const days = useMemo(() => nextDays(7), []);
-
-  const filteredHospitals = HOSPITALS.filter(h => {
-    if (selectedArea && h.area !== selectedArea) return false;
-    if (searchQ) {
-      const q = searchQ.toLowerCase();
-      return h.name.toLowerCase().includes(q) || h.area.toLowerCase().includes(q) || h.pin.includes(q);
-    }
-    return true;
-  });
-
-  const hospitalDoctors = selectedHospital ? DOCTORS.filter(d => d.hospital_id === selectedHospital.id) : [];
-  const doctorSlots = selectedDoctor?.slots?.[bookingDate] || [];
-
-  const bookAppointment = () => {
-    if (!bookingSlot || !selectedDoctor) return;
-    const newAppt = {
-      id: "ma" + Date.now(), doctor_name: selectedDoctor.name, hospital: HOSPITALS.find(h => h.id === selectedDoctor.hospital_id)?.name,
-      spec: selectedDoctor.spec, date: bookingDate, time: bookingSlot, type: bookingType, status: "booked", photo: selectedDoctor.photo,
-    };
-    setMyAppts(prev => [newAppt, ...prev]);
-    setShowConfirmation(newAppt);
-    setBookingSlot(null);
-    setBookingReason("");
-  };
-
-  const cancelAppt = (id) => {
-    setMyAppts(prev => prev.map(a => a.id === id ? { ...a, status: "cancelled" } : a));
-    showToast("Appointment cancelled");
-  };
-
-  const nav = [
-    { id: "home", label: "Home" },
-    { id: "find", label: "Find Doctors" },
-    { id: "appointments", label: "My Appointments" },
-    { id: "prescriptions", label: "Prescriptions" },
-  ];
-
-  return (
-    <div style={{ fontFamily: "'Outfit', sans-serif", background: "#FFFFFF", minHeight: "100vh" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&display=swap');
-        .editorial { font-family: 'Instrument Serif', serif; font-weight: 400; }
-        .overline { font-size: 0.7rem; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 700; color: #34C472; }
-        .glass { background: rgba(255,255,255,0.6); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.4); }
-        @keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
-        .fade-up { animation: fadeUp 0.5s ease-out both; }
-        @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-        .float { animation: float 5s ease-in-out infinite; }
-        .scrollbar-hide::-webkit-scrollbar { display:none; }
-        input, select, textarea { font-family: 'Outfit', sans-serif; }
-      `}</style>
-
-      {toast && (
-        <div className="fixed top-6 right-6 z-50 fade-up">
-          <div className="glass rounded-xl px-5 py-3 shadow-lg flex items-center gap-2 text-sm" style={{ color: "#0A2518" }}>
-            <span className="w-2 h-2 rounded-full bg-[#34C472]" /> {toast}
-          </div>
-        </div>
-      )}
-
-      {/* Header */}
-      <header className="sticky top-0 z-40 glass border-b border-white/30">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <h1 className="editorial text-2xl cursor-pointer" style={{ color: "#0A2518" }} onClick={() => { setView("home"); setSelectedDoctor(null); setSelectedHospital(null); }}>Sukhya Med</h1>
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide">
-            {nav.map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setSelectedDoctor(null); setSelectedHospital(null); }}
-                className={`px-4 py-2 rounded-xl text-sm whitespace-nowrap transition-all ${view === n.id ? "bg-[#34C472] text-white" : "hover:bg-[#EEFBF3] text-[#4A6E59]"}`}>
-                {n.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-[#34C472]/10 flex items-center justify-center text-[#34C472]"><Icon name="user" size={16} /></div>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-6 py-6">
-
-        {/* ========== HOME ========== */}
-        {view === "home" && !selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <GlassCard className="p-8 relative overflow-hidden" style={{ background: "linear-gradient(135deg, #EEFBF3 0%, #D4F5E2 50%, #EEFBF3 100%)" }}>
-              <div className="relative z-10">
-                <span className="overline">Welcome back</span>
-                <h2 className="editorial text-4xl sm:text-5xl mt-2" style={{ color: "#0A2518" }}>
-                  Hello, <em className="italic text-[#34C472]">Patient</em>
-                </h2>
-                <p className="mt-2 text-sm max-w-md" style={{ color: "#4A6E59" }}>Your health journey starts here. Find the right doctor, book an appointment, and get care — all in one place.</p>
-                <button onClick={() => setView("find")} className="mt-5 px-6 py-3 rounded-full bg-[#34C472] text-white text-sm font-medium flex items-center gap-2 hover:bg-[#2AA760] transition shadow-md">
-                  Find a Doctor <Icon name="arrow" size={16} />
+function StarRating({ value, onChange }) {
+    return (
+        <div className="flex gap-1">
+            {[1,2,3,4,5].map(n => (
+                <button key={n} type="button" onClick={() => onChange(n)}>
+                    <Star size={20} fill={n <= value ? "#1F8A4D" : "none"} stroke="#1F8A4D" />
                 </button>
-              </div>
-              <div className="absolute top-4 right-4 w-32 h-32 rounded-full bg-[#34C472]/10 float" />
-              <div className="absolute bottom-4 right-20 w-20 h-20 rounded-full bg-[#34C472]/5 float" style={{ animationDelay: "1s" }} />
-            </GlassCard>
-
-            {/* Quick Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <GlassCard className="p-5 cursor-pointer hover:-translate-y-1 transition" onClick={() => setView("appointments")}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#34C472]/10 flex items-center justify-center text-[#34C472]"><Icon name="calendar" /></div>
-                  <div>
-                    <p className="editorial text-2xl" style={{ color: "#0A2518" }}>{myAppts.filter(a => a.status === "booked").length}</p>
-                    <p className="text-xs" style={{ color: "#4A6E59" }}>Upcoming</p>
-                  </div>
-                </div>
-              </GlassCard>
-              <GlassCard className="p-5 cursor-pointer hover:-translate-y-1 transition" onClick={() => setView("prescriptions")}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#34C472]/10 flex items-center justify-center text-[#34C472]"><Icon name="pill" /></div>
-                  <div>
-                    <p className="editorial text-2xl" style={{ color: "#0A2518" }}>{MOCK_RX.length}</p>
-                    <p className="text-xs" style={{ color: "#4A6E59" }}>Prescriptions</p>
-                  </div>
-                </div>
-              </GlassCard>
-              <GlassCard className="p-5 cursor-pointer hover:-translate-y-1 transition" onClick={() => setView("find")}>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#34C472]/10 flex items-center justify-center text-[#34C472]"><Icon name="search" /></div>
-                  <div>
-                    <p className="editorial text-2xl" style={{ color: "#0A2518" }}>{DOCTORS.length}</p>
-                    <p className="text-xs" style={{ color: "#4A6E59" }}>Doctors Available</p>
-                  </div>
-                </div>
-              </GlassCard>
-            </div>
-
-            {/* Upcoming */}
-            {myAppts.filter(a => a.status === "booked").length > 0 && (
-              <GlassCard className="p-6">
-                <h3 className="editorial text-2xl mb-4" style={{ color: "#0A2518" }}>Upcoming Appointments</h3>
-                <div className="space-y-3">
-                  {myAppts.filter(a => a.status === "booked").map(a => (
-                    <div key={a.id} className="flex items-center gap-4 p-4 rounded-xl bg-[#EEFBF3]/50">
-                      <img src={a.photo} alt="" className="w-12 h-12 rounded-xl object-cover" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium" style={{ color: "#0A2518" }}>{a.doctor_name}</p>
-                        <p className="text-xs" style={{ color: "#4A6E59" }}>{a.spec} · {a.hospital}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs font-medium" style={{ color: "#0A2518" }}>{new Date(a.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</p>
-                        <p className="text-xs" style={{ color: "#34C472" }}>{a.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            )}
-          </div>
-        )}
-
-        {/* ========== FIND DOCTORS ========== */}
-        {view === "find" && !selectedHospital && !selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <div>
-              <span className="overline">Find your doctor</span>
-              <h2 className="editorial text-4xl mt-1" style={{ color: "#0A2518" }}>Start with your <em className="italic text-[#34C472]">area</em>.</h2>
-              <p className="mt-1 text-sm" style={{ color: "#4A6E59" }}>Pick your neighbourhood — we'll show hospitals and the specialists they trust.</p>
-            </div>
-
-            {/* Search */}
-            <GlassCard className="p-3 flex gap-2">
-              <div className="relative flex-1">
-                <span className="absolute left-4 top-3.5 text-[#4A6E59]"><Icon name="search" size={16} /></span>
-                <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search by hospital, area or pin code…"
-                  className="w-full bg-white/70 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#34C472]" />
-              </div>
-            </GlassCard>
-
-            {/* Area chips */}
-            <div>
-              <p className="text-xs mb-2" style={{ color: "#4A6E59" }}>Popular areas</p>
-              <div className="flex flex-wrap gap-2">
-                {selectedArea && (
-                  <button onClick={() => setSelectedArea("")} className="px-4 py-2 rounded-full bg-[#34C472] text-white text-sm flex items-center gap-2">
-                    <Icon name="pin" size={14} /> {selectedArea} <Icon name="x" size={14} />
-                  </button>
-                )}
-                {AREAS.filter(a => a !== selectedArea).map(a => (
-                  <button key={a} onClick={() => setSelectedArea(a)}
-                    className="glass px-4 py-2 rounded-full text-sm hover:-translate-y-0.5 transition flex items-center gap-2" style={{ color: "#4A6E59" }}>
-                    <Icon name="pin" size={14} /> {a}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Hospital Grid */}
-            <div>
-              <h3 className="editorial text-2xl mb-4" style={{ color: "#0A2518" }}>{selectedArea ? `Hospitals in ${selectedArea}` : "All Hospitals"}</h3>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {filteredHospitals.map((h, i) => (
-                  <GlassCard key={h.id} className="overflow-hidden cursor-pointer hover:-translate-y-1 transition-transform fade-up" style={{ animationDelay: `${i * 80}ms` }}
-                    onClick={() => setSelectedHospital(h)}>
-                    <div className="h-36 relative">
-                      <img src={h.img} alt={h.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#0A2518]/50 to-transparent" />
-                      <span className="absolute bottom-3 left-3 text-white text-xs px-2.5 py-1 rounded-full bg-white/20 backdrop-blur">
-                        {h.doctors} doctor{h.doctors > 1 ? "s" : ""}
-                      </span>
-                    </div>
-                    <div className="p-5">
-                      <h4 className="editorial text-xl" style={{ color: "#0A2518" }}>{h.name}</h4>
-                      <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "#4A6E59" }}><Icon name="pin" size={12} /> {h.area} · {h.city} · {h.pin}</p>
-                      <div className="flex flex-wrap gap-1 mt-3">
-                        {h.specialties.slice(0, 3).map(s => (
-                          <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-[#EEFBF3] text-[#34C472]">{s}</span>
-                        ))}
-                        {h.specialties.length > 3 && <span className="text-xs px-2 py-0.5 rounded-full bg-[#EEFBF3] text-[#4A6E59]">+{h.specialties.length - 3}</span>}
-                      </div>
-                    </div>
-                  </GlassCard>
-                ))}
-              </div>
-              {filteredHospitals.length === 0 && <p className="text-center py-12 text-sm" style={{ color: "#4A6E59" }}>No hospitals found in this area.</p>}
-            </div>
-          </div>
-        )}
-
-        {/* ========== HOSPITAL DETAIL (Doctors List) ========== */}
-        {view === "find" && selectedHospital && !selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <button onClick={() => setSelectedHospital(null)} className="flex items-center gap-2 text-sm hover:underline" style={{ color: "#34C472" }}>
-              <Icon name="back" size={16} /> Back to hospitals
-            </button>
-            <GlassCard className="overflow-hidden">
-              <div className="h-48 relative">
-                <img src={selectedHospital.img} alt="" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0A2518]/60 to-transparent" />
-                <div className="absolute bottom-4 left-5 text-white">
-                  <h2 className="editorial text-3xl">{selectedHospital.name}</h2>
-                  <p className="text-xs mt-1 flex items-center gap-1 opacity-80"><Icon name="pin" size={12} /> {selectedHospital.area} · {selectedHospital.city}</p>
-                </div>
-              </div>
-              <div className="p-5 flex flex-wrap gap-2">
-                {selectedHospital.specialties.map(s => <span key={s} className="text-xs px-3 py-1 rounded-full bg-[#EEFBF3] text-[#34C472]">{s}</span>)}
-              </div>
-            </GlassCard>
-
-            <h3 className="editorial text-2xl" style={{ color: "#0A2518" }}>Doctors at {selectedHospital.name}</h3>
-            <div className="space-y-4">
-              {hospitalDoctors.map((doc, i) => (
-                <GlassCard key={doc.id} className="p-5 flex items-start gap-5 cursor-pointer hover:-translate-y-0.5 transition fade-up" style={{ animationDelay: `${i * 80}ms` }}
-                  onClick={() => setSelectedDoctor(doc)}>
-                  <img src={doc.photo} alt="" className="w-20 h-20 rounded-2xl object-cover flex-shrink-0" />
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="editorial text-xl" style={{ color: "#0A2518" }}>{doc.name}</h4>
-                        <p className="text-xs mt-0.5" style={{ color: "#4A6E59" }}>{doc.spec} · {doc.exp} years exp</p>
-                      </div>
-                      <span className="text-sm font-medium" style={{ color: "#34C472" }}>₹{doc.fee}</span>
-                    </div>
-                    <p className="text-xs mt-2 leading-relaxed" style={{ color: "#4A6E59" }}>{doc.bio}</p>
-                    <div className="flex items-center gap-3 mt-3">
-                      {doc.online && <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 flex items-center gap-1"><Icon name="video" size={12} /> Online available</span>}
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-[#EEFBF3] text-[#34C472]">
-                        {(doc.slots[today] || []).length} slots today
-                      </span>
-                    </div>
-                  </div>
-                  <div className="self-center text-[#34C472]"><Icon name="arrow" size={20} /></div>
-                </GlassCard>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ========== DOCTOR PROFILE + BOOKING ========== */}
-        {selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <button onClick={() => { setSelectedDoctor(null); if (!selectedHospital) setView("find"); }}
-              className="flex items-center gap-2 text-sm hover:underline" style={{ color: "#34C472" }}>
-              <Icon name="back" size={16} /> Back
-            </button>
-
-            {/* Doctor Profile Card */}
-            <GlassCard className="p-6">
-              <div className="flex flex-col sm:flex-row gap-6">
-                <img src={selectedDoctor.photo} alt="" className="w-28 h-28 rounded-2xl object-cover flex-shrink-0" />
-                <div className="flex-1">
-                  <h2 className="editorial text-3xl" style={{ color: "#0A2518" }}>{selectedDoctor.name}</h2>
-                  <p className="text-sm mt-1" style={{ color: "#4A6E59" }}>{selectedDoctor.spec}</p>
-                  <div className="flex flex-wrap gap-3 mt-3">
-                    <span className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-[#EEFBF3]" style={{ color: "#4A6E59" }}><Icon name="building" size={12} /> {HOSPITALS.find(h => h.id === selectedDoctor.hospital_id)?.name}</span>
-                    <span className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-[#EEFBF3]" style={{ color: "#4A6E59" }}><Icon name="briefcase" size={12} /> {selectedDoctor.exp} years</span>
-                    {selectedDoctor.online && <span className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-600"><Icon name="video" size={12} /> Online Available</span>}
-                  </div>
-                  <p className="text-sm mt-4 leading-relaxed" style={{ color: "#4A6E59" }}>{selectedDoctor.bio}</p>
-                  <p className="mt-3 text-lg font-medium" style={{ color: "#34C472" }}>₹{selectedDoctor.fee} <span className="text-xs font-normal" style={{ color: "#4A6E59" }}>per consultation</span></p>
-                </div>
-              </div>
-            </GlassCard>
-
-            {/* Slot Picker */}
-            <GlassCard className="p-6">
-              <h3 className="editorial text-2xl mb-4" style={{ color: "#0A2518" }}>Book an Appointment</h3>
-
-              {/* Day selector */}
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 mb-5">
-                {days.map(d => (
-                  <button key={d.iso} onClick={() => { setBookingDate(d.iso); setBookingSlot(null); }}
-                    className={`flex flex-col items-center px-4 py-3 rounded-xl text-xs whitespace-nowrap transition ${
-                      bookingDate === d.iso ? "bg-[#34C472] text-white shadow-md" : "glass hover:bg-white/80 text-[#4A6E59]"
-                    }`}>
-                    <span className="font-medium">{d.label.split(", ")[0] || d.label.split(" ")[0]}</span>
-                    <span className="text-lg font-semibold mt-0.5">{d.label.match(/\d+/)?.[0]}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Consultation type */}
-              {selectedDoctor.online && (
-                <div className="flex gap-2 mb-5">
-                  {["offline", "online"].map(t => (
-                    <button key={t} onClick={() => setBookingType(t)}
-                      className={`px-4 py-2 rounded-full text-sm capitalize transition ${
-                        bookingType === t ? "bg-[#0A2518] text-white" : "glass text-[#4A6E59]"
-                      }`}>
-                      {t === "online" && <span className="mr-1">🎥</span>}
-                      {t} Consultation
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Slots Grid */}
-              <p className="text-xs mb-3" style={{ color: "#4A6E59" }}>Available slots for {new Date(bookingDate + "T00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}</p>
-              {doctorSlots.length === 0 ? (
-                <div className="py-8 text-center">
-                  <p className="text-sm" style={{ color: "#4A6E59" }}>No available slots on this date.</p>
-                  <p className="text-xs mt-1" style={{ color: "#4A6E59" }}>Try another day.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {doctorSlots.map(slot => (
-                    <button key={slot} onClick={() => setBookingSlot(slot)}
-                      className={`py-3 rounded-xl text-sm font-medium transition ${
-                        bookingSlot === slot ? "bg-[#34C472] text-white shadow-md scale-105" : "bg-[#EEFBF3] hover:bg-[#D4F5E2] text-[#0A2518]"
-                      }`}>
-                      {slot}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Reason */}
-              {bookingSlot && (
-                <div className="mt-5 fade-up">
-                  <textarea placeholder="Reason for visit (optional)..." value={bookingReason} onChange={e => setBookingReason(e.target.value)} rows={2}
-                    className="w-full px-4 py-3 rounded-xl bg-[#EEFBF3]/50 border border-[#34C472]/20 text-sm focus:outline-none focus:ring-2 focus:ring-[#34C472] resize-none mb-4" />
-                  <button onClick={bookAppointment}
-                    className="w-full py-3.5 rounded-full bg-[#34C472] text-white font-medium text-sm hover:bg-[#2AA760] transition shadow-md flex items-center justify-center gap-2">
-                    <Icon name="check" size={16} /> Confirm Booking — {bookingSlot} on {new Date(bookingDate + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                  </button>
-                </div>
-              )}
-            </GlassCard>
-          </div>
-        )}
-
-        {/* ========== MY APPOINTMENTS ========== */}
-        {view === "appointments" && !selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <div>
-              <span className="overline">Your schedule</span>
-              <h2 className="editorial text-4xl mt-1" style={{ color: "#0A2518" }}>My Appointments</h2>
-            </div>
-
-            {myAppts.filter(a => a.status === "booked").length > 0 && (
-              <GlassCard className="p-6">
-                <h3 className="editorial text-xl mb-4" style={{ color: "#0A2518" }}>Upcoming</h3>
-                <div className="space-y-3">
-                  {myAppts.filter(a => a.status === "booked").map((a, i) => (
-                    <div key={a.id} className="flex items-center gap-4 p-4 rounded-xl bg-[#EEFBF3]/50 fade-up" style={{ animationDelay: `${i * 60}ms` }}>
-                      <img src={a.photo} alt="" className="w-14 h-14 rounded-xl object-cover" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium" style={{ color: "#0A2518" }}>{a.doctor_name}</p>
-                        <p className="text-xs" style={{ color: "#4A6E59" }}>{a.spec} · {a.hospital}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs flex items-center gap-1" style={{ color: "#0A2518" }}><Icon name="calendar" size={12} /> {new Date(a.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
-                          <span className="text-xs flex items-center gap-1" style={{ color: "#34C472" }}><Icon name="clock" size={12} /> {a.time}</span>
-                          {a.type === "online" && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600">Online</span>}
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        {a.type === "online" && (
-                          <button className="px-3 py-1.5 rounded-full bg-[#34C472] text-white text-xs flex items-center gap-1"><Icon name="video" size={12} /> Join</button>
-                        )}
-                        <button onClick={() => cancelAppt(a.id)} className="px-3 py-1.5 rounded-full bg-red-50 text-red-500 text-xs">Cancel</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            )}
-
-            <GlassCard className="p-6">
-              <h3 className="editorial text-xl mb-4" style={{ color: "#0A2518" }}>Past & Cancelled</h3>
-              <div className="space-y-2">
-                {myAppts.filter(a => a.status !== "booked").map(a => (
-                  <div key={a.id} className="flex items-center gap-4 p-3 rounded-xl hover:bg-[#EEFBF3]/30 transition">
-                    <img src={a.photo} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                    <div className="flex-1">
-                      <p className="text-sm" style={{ color: "#0A2518" }}>{a.doctor_name}</p>
-                      <p className="text-xs" style={{ color: "#4A6E59" }}>{new Date(a.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · {a.time}</p>
-                    </div>
-                    <span className={`text-xs px-2.5 py-1 rounded-full ${STATUS_COLORS[a.status]}`}>{a.status}</span>
-                  </div>
-                ))}
-                {myAppts.filter(a => a.status !== "booked").length === 0 && <p className="text-sm text-center py-6" style={{ color: "#4A6E59" }}>No past appointments yet.</p>}
-              </div>
-            </GlassCard>
-          </div>
-        )}
-
-        {/* ========== PRESCRIPTIONS ========== */}
-        {view === "prescriptions" && !selectedDoctor && (
-          <div className="space-y-6 fade-up">
-            <div>
-              <span className="overline">Medical records</span>
-              <h2 className="editorial text-4xl mt-1" style={{ color: "#0A2518" }}>My Prescriptions</h2>
-            </div>
-            {MOCK_RX.map(rx => (
-              <GlassCard key={rx.id} className="p-6">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: "#0A2518" }}>{rx.doctor}</p>
-                    <p className="text-xs" style={{ color: "#4A6E59" }}>{new Date(rx.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</p>
-                  </div>
-                  <span className="text-xs px-3 py-1 rounded-full bg-[#EEFBF3] text-[#34C472]">Active</span>
-                </div>
-                <p className="text-xs mb-3" style={{ color: "#4A6E59" }}>Diagnosis: <span className="font-medium" style={{ color: "#0A2518" }}>{rx.diagnosis}</span></p>
-                <div className="space-y-2">
-                  {rx.meds.map((m, i) => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#EEFBF3]/50">
-                      <div className="w-8 h-8 rounded-lg bg-[#34C472]/10 flex items-center justify-center text-[#34C472]"><Icon name="pill" size={14} /></div>
-                      <div>
-                        <p className="text-sm font-medium" style={{ color: "#0A2518" }}>{m.name} — {m.dosage}</p>
-                        <p className="text-xs" style={{ color: "#4A6E59" }}>{m.freq} · {m.dur}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
             ))}
-            {MOCK_RX.length === 0 && (
-              <GlassCard className="p-12 text-center">
-                <p className="text-sm" style={{ color: "#4A6E59" }}>No prescriptions yet.</p>
-              </GlassCard>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ========== BOOKING CONFIRMATION MODAL ========== */}
-      {showConfirmation && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm flex items-center justify-center p-4">
-          <GlassCard className="w-full max-w-md p-8 text-center fade-up" style={{ background: "rgba(255,255,255,0.95)" }}>
-            <div className="w-16 h-16 rounded-full bg-[#34C472] flex items-center justify-center mx-auto mb-4">
-              <Icon name="check" size={32} />
-            </div>
-            <h3 className="editorial text-2xl mb-1" style={{ color: "#0A2518" }}>Appointment Booked!</h3>
-            <p className="text-sm mb-5" style={{ color: "#4A6E59" }}>Your appointment has been confirmed.</p>
-            <div className="bg-[#EEFBF3] rounded-xl p-4 text-left space-y-2 mb-6">
-              <div className="flex justify-between text-sm"><span style={{ color: "#4A6E59" }}>Doctor</span><span className="font-medium" style={{ color: "#0A2518" }}>{showConfirmation.doctor_name}</span></div>
-              <div className="flex justify-between text-sm"><span style={{ color: "#4A6E59" }}>Hospital</span><span className="font-medium" style={{ color: "#0A2518" }}>{showConfirmation.hospital}</span></div>
-              <div className="flex justify-between text-sm"><span style={{ color: "#4A6E59" }}>Date</span><span className="font-medium" style={{ color: "#0A2518" }}>{new Date(showConfirmation.date + "T00:00").toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</span></div>
-              <div className="flex justify-between text-sm"><span style={{ color: "#4A6E59" }}>Time</span><span className="font-medium" style={{ color: "#34C472" }}>{showConfirmation.time}</span></div>
-              <div className="flex justify-between text-sm"><span style={{ color: "#4A6E59" }}>Type</span><span className="font-medium capitalize" style={{ color: "#0A2518" }}>{showConfirmation.type}</span></div>
-            </div>
-            <button onClick={() => { setShowConfirmation(null); setSelectedDoctor(null); setSelectedHospital(null); setView("appointments"); }}
-              className="w-full py-3 rounded-full bg-[#34C472] text-white font-medium text-sm">View My Appointments</button>
-          </GlassCard>
         </div>
-      )}
-    </div>
-  );
+    );
+}
+
+// ─── Patient Nav ──────────────────────────────────────────────────────────────
+function PatientNav({ tab, setTab, user }) {
+    const { logout } = useAuth();
+    const navigate = useNavigate();
+    const [mobileOpen, setMobileOpen] = useState(false);
+
+    const navItems = [
+        { id: "home", label: "Dashboard", icon: Home },
+        { id: "find", label: "Find Doctors", icon: Search },
+        { id: "appointments", label: "Appointments", icon: Calendar },
+        { id: "prescriptions", label: "Prescriptions", icon: FileText },
+    ];
+
+    const handleLogout = async () => { await logout(); navigate("/"); };
+
+    return (
+        <header className="sticky top-0 z-50 w-full border-b border-mint-100/60 bg-white/70 backdrop-blur-xl">
+            <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+                <button onClick={() => setTab("home")} className="flex items-center gap-2.5">
+                    <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-600 text-white shadow-[0_4px_18px_rgba(31,138,77,0.4)]">
+                        <Activity size={18} strokeWidth={2.4} />
+                    </div>
+                    <span className="editorial text-2xl text-mint-800">Sukhya Med</span>
+                </button>
+
+                {/* Desktop nav */}
+                <nav className="hidden md:flex items-center gap-1">
+                    {navItems.map(item => (
+                        <button key={item.id} onClick={() => setTab(item.id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm transition ${tab === item.id ? "bg-mint-600 text-white" : "text-mint-800/70 hover:text-mint-800 hover:bg-mint-50"}`}>
+                            <item.icon size={15} /> {item.label}
+                        </button>
+                    ))}
+                </nav>
+
+                {/* User + logout */}
+                <div className="hidden md:flex items-center gap-3">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl glass text-sm text-mint-800">
+                        <div className="w-7 h-7 rounded-full bg-mint-600 text-white flex items-center justify-center text-xs font-semibold">
+                            {user?.full_name?.[0] || "P"}
+                        </div>
+                        <span>{user?.full_name?.split(" ")[0]}</span>
+                    </div>
+                    <button onClick={handleLogout} className="p-2 rounded-xl text-mint-800/50 hover:bg-red-50 hover:text-red-500 transition">
+                        <LogOut size={18} />
+                    </button>
+                </div>
+
+                {/* Mobile hamburger */}
+                <button onClick={() => setMobileOpen(m => !m)} className="md:hidden p-2 rounded-xl hover:bg-mint-50 text-mint-800">
+                    <Menu size={22} />
+                </button>
+            </div>
+
+            {/* Mobile dropdown */}
+            {mobileOpen && (
+                <div className="md:hidden border-t border-mint-100/60 bg-white/95 backdrop-blur-xl px-6 py-4 space-y-1">
+                    {navItems.map(item => (
+                        <button key={item.id} onClick={() => { setTab(item.id); setMobileOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm transition ${tab === item.id ? "bg-mint-600 text-white" : "text-mint-800/70 hover:bg-mint-50"}`}>
+                            <item.icon size={16} /> {item.label}
+                        </button>
+                    ))}
+                    <button onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-red-600 hover:bg-red-50 transition">
+                        <LogOut size={16} /> Sign out
+                    </button>
+                </div>
+            )}
+        </header>
+    );
+}
+
+// ─── Prescription Card ────────────────────────────────────────────────────────
+function PresCard({ p }) {
+    const [expanded, setExpanded] = useState(false);
+    return (
+        <div className="rounded-2xl bg-white/70 border border-mint-100 p-5">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <p className="font-medium text-mint-800">{p.diagnosis}
+                        {p.is_voided && <span className="ml-2 text-xs text-red-500 border border-red-200 rounded-full px-2 py-0.5">Voided</span>}
+                    </p>
+                    <p className="text-xs text-mint-800/60 mt-0.5">by {p.doctor_name} · {new Date(p.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+                    <p className="text-xs text-mint-800/60 mt-1">
+                        <Pill size={11} className="inline mr-1 text-mint-600" />
+                        {(p.medications||[]).map(m=>`${m.name} ${m.dosage}`).join(" · ")}
+                    </p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                    {!p.is_voided && (
+                        <button onClick={() => generatePrescriptionPDF(p)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-mint-600 text-white text-xs hover:bg-mint-700 transition shadow-sm">
+                            <Download size={12} /> Download
+                        </button>
+                    )}
+                    <button onClick={() => setExpanded(s => !s)} className="p-1.5 rounded-lg text-mint-800/50 hover:bg-mint-50">
+                        {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                </div>
+            </div>
+            {expanded && (
+                <div className="mt-4 space-y-2 border-t border-mint-100 pt-4">
+                    <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">
+                        <span>Medicine</span><span>Dosage</span><span>Frequency</span><span>Duration</span>
+                    </div>
+                    {(p.medications||[]).map((m,i) => (
+                        <div key={i} className="grid grid-cols-4 gap-2 text-xs">
+                            <span className="font-medium text-mint-800">{m.name}</span>
+                            <span className="text-mint-800/60">{m.dosage}</span>
+                            <span className="text-mint-800/60">{m.frequency}</span>
+                            <span className="text-mint-800/60">{m.duration}</span>
+                        </div>
+                    ))}
+                    {p.additional_notes && <p className="text-xs text-mint-800/60 italic mt-2 pt-2 border-t border-mint-100">{p.additional_notes}</p>}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Find Doctors Panel ───────────────────────────────────────────────────────
+function FindDoctorsPanel() {
+    const [areas, setAreas] = useState([]);
+    const [hospitals, setHospitals] = useState([]);
+    const [selectedArea, setSelectedArea] = useState("");
+    const [q, setQ] = useState("");
+    const [specialty, setSpecialty] = useState("");
+    const [specialties, setSpecialties] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        api.get("/areas").then(r => setAreas(r.data)).catch(() => {});
+        api.get("/specialties").then(r => setSpecialties(r.data)).catch(() => {});
+    }, []);
+
+    useEffect(() => {
+        setLoading(true);
+        const params = {};
+        if (selectedArea) params.area = selectedArea;
+        if (q) params.q = q;
+        if (specialty) params.specialty = specialty;
+        const t = setTimeout(() => {
+            api.get("/hospitals", { params }).then(r => setHospitals(r.data)).finally(() => setLoading(false));
+        }, 200);
+        return () => clearTimeout(t);
+    }, [selectedArea, q, specialty]);
+
+    const popularAreas = useMemo(() => areas.slice(0, 8), [areas]);
+
+    return (
+        <div>
+            <span className="overline">Find your doctor</span>
+            <h2 className="editorial mt-2 text-4xl text-mint-800">Start with your <em className="italic text-mint-600">area</em>.</h2>
+            <p className="mt-2 text-mint-800/70 text-sm max-w-xl">Pick your neighbourhood — we'll show hospitals and the specialists they trust.</p>
+
+            <div className="mt-6 glass rounded-2xl p-3 flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                    <Search size={16} className="absolute left-4 top-3.5 text-mint-700" />
+                    <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by hospital, area or pin code…"
+                        className="w-full bg-white/70 rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" />
+                </div>
+                <select value={specialty} onChange={e => setSpecialty(e.target.value)}
+                    className="bg-white/70 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500">
+                    <option value="">All specialties</option>
+                    {specialties.map(s => <option key={s}>{s}</option>)}
+                </select>
+            </div>
+
+            {!selectedArea ? (
+                <div className="mt-6">
+                    <p className="text-sm text-mint-800/70 mb-3">Popular areas</p>
+                    <div className="flex flex-wrap gap-2">
+                        {popularAreas.map(a => (
+                            <button key={`${a.area}-${a.city}`} onClick={() => setSelectedArea(a.area)}
+                                className="glass rounded-full px-4 py-2 text-sm hover:-translate-y-0.5 transition flex items-center gap-2">
+                                <MapPin size={14} className="text-mint-600" /> {a.area} · <span className="text-mint-800/60">{a.city}</span>
+                                <span className="text-xs text-mint-700 ml-1">({a.hospital_count})</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                <div className="mt-5 flex items-center gap-3">
+                    <span className="rounded-full bg-mint-600 text-white text-xs px-3 py-1.5">Area: {selectedArea}</span>
+                    <button onClick={() => setSelectedArea("")} className="text-xs text-mint-600 hover:underline">Change area</button>
+                </div>
+            )}
+
+            <div className="mt-8">
+                <h3 className="editorial text-2xl text-mint-800">{selectedArea ? `Hospitals in ${selectedArea}` : "All hospitals"}</h3>
+                {loading ? <p className="mt-6 text-mint-800/60">Loading…</p> : (
+                    <div className="mt-5 grid sm:grid-cols-2 gap-5">
+                        {hospitals.map(h => (
+                            <Link key={h.id} to={`/hospitals/${h.id}`}
+                                className="glass rounded-2xl overflow-hidden hover:-translate-y-1 transition-transform">
+                                <div className="h-32 w-full relative">
+                                    <img src={h.image_url} alt={h.name} className="absolute inset-0 w-full h-full object-cover" />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-mint-800/40 to-transparent" />
+                                </div>
+                                <div className="p-4">
+                                    <p className="editorial text-lg text-mint-800 leading-tight">{h.name}</p>
+                                    <p className="text-xs text-mint-800/60 mt-0.5 flex items-center gap-1"><MapPin size={11} /> {h.area} · {h.city} · {h.pin_code}</p>
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                        {(h.specialties_available||[]).slice(0,3).map(s => (
+                                            <span key={s} className="rounded-full bg-mint-50 text-mint-700 text-xs px-2 py-0.5">{s}</span>
+                                        ))}
+                                    </div>
+                                    <div className="mt-3 flex items-center justify-between text-sm">
+                                        <span className="flex items-center gap-1 text-mint-800/70"><Stethoscope size={13} /> {h.doctor_count} doctors</span>
+                                        <span className="text-mint-600 font-medium flex items-center gap-1">View <ArrowRight size={13} /></span>
+                                    </div>
+                                </div>
+                            </Link>
+                        ))}
+                        {hospitals.length === 0 && (
+                            <p className="col-span-full text-center text-mint-800/60 py-10">
+                                No hospitals found. <button onClick={() => { setSelectedArea(""); setQ(""); setSpecialty(""); }} className="text-mint-600 underline">Reset filters</button>
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+export default function PatientDashboard() {
+    const { user } = useAuth();
+    const [appts, setAppts] = useState([]);
+    const [pres, setPres] = useState([]);
+    const [tab, setTab] = useState("home");
+    const [ratings, setRatings] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("sm_ratings") || "{}"); } catch { return {}; }
+    });
+    const [ratingForm, setRatingForm] = useState(null);
+    const [ratingValue, setRatingValue] = useState(5);
+    const [ratingNote, setRatingNote] = useState("");
+    const [favourites, setFavourites] = useState(() => {
+        try { return JSON.parse(localStorage.getItem("sm_favourites") || "[]"); } catch { return []; }
+    });
+
+    const submitRating = (apptId) => {
+        const next = { ...ratings, [apptId]: { stars: ratingValue, note: ratingNote, date: new Date().toISOString() } };
+        setRatings(next);
+        localStorage.setItem("sm_ratings", JSON.stringify(next));
+        setRatingForm(null); setRatingNote(""); setRatingValue(5);
+    };
+
+    const toggleFav = (a) => {
+        const exists = favourites.find(f => f.id === a.doctor_id);
+        const next = exists ? favourites.filter(f => f.id !== a.doctor_id)
+            : [...favourites, { id: a.doctor_id, name: a.doctor_name, spec: a.doctor_specialization }];
+        setFavourites(next);
+        localStorage.setItem("sm_favourites", JSON.stringify(next));
+    };
+
+    const load = () => {
+        api.get("/appointments").then(r => setAppts(r.data)).catch(() => {});
+        api.get("/prescriptions").then(r => setPres(r.data)).catch(() => {});
+    };
+    useEffect(() => { load(); }, []);
+
+    const cancel = async (id) => {
+        await api.patch(`/appointments/${id}`, { status: "cancelled", cancellation_reason: "Cancelled by patient" });
+        load();
+    };
+
+    const now = new Date();
+    const upcoming = appts
+        .filter(a => a.status === "booked" && new Date(`${a.date}T${a.time_slot}:00`) >= now)
+        .sort((a, b) => new Date(`${a.date}T${a.time_slot}`) - new Date(`${b.date}T${b.time_slot}`));
+    const past = appts.filter(a => a.status !== "booked" || new Date(`${a.date}T${a.time_slot}:00`) < now);
+
+    return (
+        <div className="min-h-screen">
+            <PatientNav tab={tab} setTab={setTab} user={user} />
+
+            <section className="mx-auto max-w-6xl px-6 pt-8 pb-24" data-testid="patient-dashboard">
+
+                {/* ── HOME ── */}
+                {tab === "home" && (
+                    <div className="space-y-6">
+                        <div>
+                            <span className="overline">Patient dashboard</span>
+                            <h1 className="editorial mt-2 text-5xl text-mint-800">
+                                Welcome back, <em className="italic text-mint-600">{user?.full_name?.split(" ")[0]}</em>
+                            </h1>
+                            <p className="mt-2 text-mint-800/70">Your care, all in one place.</p>
+                        </div>
+
+                        {/* Reminder */}
+                        {upcoming[0] && (() => {
+                            const cd = countdown(upcoming[0].date, upcoming[0].time_slot);
+                            return cd ? (
+                                <div className="glass-mint rounded-2xl px-5 py-3.5 flex items-center gap-3">
+                                    <Clock size={18} className="text-mint-600 flex-shrink-0" />
+                                    <p className="text-sm text-mint-800">
+                                        <strong>Next appointment:</strong> {upcoming[0].doctor_name} · {upcoming[0].date} at {upcoming[0].time_slot} —{" "}
+                                        <span className="text-mint-600 font-semibold">{cd}</span>
+                                    </p>
+                                </div>
+                            ) : null;
+                        })()}
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <button onClick={() => setTab("find")} className="glass-mint rounded-2xl p-5 text-left hover:-translate-y-1 transition">
+                                <div className="flex items-center gap-2 mb-2"><Search size={16} className="text-mint-600" /><p className="overline text-xs">Find Doctor</p></div>
+                                <p className="editorial text-2xl text-mint-800">Explore</p>
+                            </button>
+                            <button onClick={() => setTab("appointments")} className="glass-mint rounded-2xl p-5 text-left hover:-translate-y-1 transition">
+                                <div className="flex items-center gap-2 mb-2"><Calendar size={16} className="text-mint-600" /><p className="overline text-xs">Upcoming</p></div>
+                                <p className="editorial text-3xl text-mint-800">{upcoming.length}</p>
+                            </button>
+                            <button onClick={() => setTab("prescriptions")} className="glass-mint rounded-2xl p-5 text-left hover:-translate-y-1 transition">
+                                <div className="flex items-center gap-2 mb-2"><FileText size={16} className="text-mint-600" /><p className="overline text-xs">Prescriptions</p></div>
+                                <p className="editorial text-3xl text-mint-800">{pres.length}</p>
+                            </button>
+                        </div>
+
+                        {/* Favourites */}
+                        {favourites.length > 0 && (
+                            <div className="glass rounded-2xl p-6">
+                                <h2 className="editorial text-2xl text-mint-800 mb-4 flex items-center gap-2"><Heart size={16} className="text-mint-600" /> Saved Doctors</h2>
+                                <div className="flex flex-wrap gap-2">
+                                    {favourites.map(f => (
+                                        <Link key={f.id} to={`/doctors/${f.id}`}
+                                            className="flex items-center gap-2 px-4 py-2.5 rounded-full glass border border-mint-100 hover:border-mint-500 transition text-sm">
+                                            <User size={13} className="text-mint-600" />
+                                            <span className="font-medium text-mint-800">{f.name}</span>
+                                            <span className="text-mint-800/50 text-xs">{f.spec}</span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Upcoming appointments */}
+                        <div className="glass rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="editorial text-2xl text-mint-800">Upcoming appointments</h2>
+                                <button onClick={() => setTab("find")} className="btn-pill btn-primary text-sm py-2">Book appointment</button>
+                            </div>
+                            {upcoming.length === 0
+                                ? <p className="text-sm text-mint-800/60">No upcoming appointments. <button onClick={() => setTab("find")} className="text-mint-600 underline">Find a doctor</button>.</p>
+                                : upcoming.map(a => (
+                                    <div key={a.id} className="py-4 border-b border-mint-100/60 last:border-0 flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="editorial text-xl text-mint-800">{a.doctor_name}</p>
+                                            <p className="text-xs text-mint-700">{a.doctor_specialization}</p>
+                                            <p className="text-sm text-mint-800/70 mt-0.5">{a.date} · {a.time_slot}</p>
+                                            {countdown(a.date, a.time_slot) && <span className="text-xs text-mint-600 font-medium">{countdown(a.date, a.time_slot)}</span>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => toggleFav(a)} className={`p-2 rounded-xl transition ${favourites.find(f=>f.id===a.doctor_id) ? "text-mint-600 bg-mint-50" : "text-mint-800/30 hover:text-mint-600 hover:bg-mint-50"}`}>
+                                                <Heart size={15} fill={favourites.find(f=>f.id===a.doctor_id) ? "#1F8A4D" : "none"} />
+                                            </button>
+                                            <button onClick={() => cancel(a.id)} className="btn-pill btn-ghost text-sm text-red-600 py-1.5 px-3">
+                                                <X size={13} /> Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+
+                        {/* Prescriptions on Home */}
+                        {pres.length > 0 && (
+                            <div className="glass rounded-2xl p-6">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="editorial text-2xl text-mint-800">Recent prescriptions</h2>
+                                    <button onClick={() => setTab("prescriptions")} className="text-xs text-mint-600 hover:underline">View all</button>
+                                </div>
+                                <div className="space-y-3">{pres.slice(0,2).map(p => <PresCard key={p.id} p={p} />)}</div>
+                            </div>
+                        )}
+
+                        <p className="text-xs text-mint-800/50 flex items-center gap-1.5">
+                            <Sparkles size={12} /> Use the AI Health Assistant bubble at the bottom-right for instant guidance.
+                        </p>
+                    </div>
+                )}
+
+                {/* ── FIND DOCTORS ── */}
+                {tab === "find" && <FindDoctorsPanel />}
+
+                {/* ── APPOINTMENTS ── */}
+                {tab === "appointments" && (
+                    <div className="space-y-6">
+                        <div>
+                            <span className="overline">Schedule</span>
+                            <h2 className="editorial mt-2 text-4xl text-mint-800">My Appointments</h2>
+                        </div>
+
+                        <div className="glass rounded-2xl p-6">
+                            <h3 className="editorial text-2xl text-mint-800 mb-4">Upcoming</h3>
+                            {upcoming.length === 0
+                                ? <p className="text-sm text-mint-800/60">No upcoming appointments. <button onClick={() => setTab("find")} className="text-mint-600 underline">Find a doctor</button>.</p>
+                                : upcoming.map(a => (
+                                    <div key={a.id} className="py-4 border-b border-mint-100/60 last:border-0 flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="editorial text-xl text-mint-800">{a.doctor_name}</p>
+                                            <p className="text-xs text-mint-700 font-medium">{a.doctor_specialization}</p>
+                                            <p className="text-sm text-mint-800/70 mt-0.5">{a.date} · {a.time_slot}</p>
+                                            {countdown(a.date, a.time_slot) && <span className="text-xs text-mint-600 font-medium">{countdown(a.date, a.time_slot)}</span>}
+                                            {a.reason && <p className="text-xs text-mint-800/50 italic mt-0.5">"{a.reason}"</p>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => toggleFav(a)} className={`p-2 rounded-xl transition ${favourites.find(f=>f.id===a.doctor_id) ? "text-mint-600 bg-mint-50" : "text-mint-800/30 hover:text-mint-600"}`}>
+                                                <Heart size={15} fill={favourites.find(f=>f.id===a.doctor_id) ? "#1F8A4D" : "none"} />
+                                            </button>
+                                            <button onClick={() => cancel(a.id)} className="btn-pill btn-ghost text-sm text-red-600 py-1.5 px-3"><X size={13} /> Cancel</button>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+
+                        <div className="glass rounded-2xl p-6">
+                            <h3 className="editorial text-2xl text-mint-800 mb-4">History</h3>
+                            {past.length === 0
+                                ? <p className="text-sm text-mint-800/60">No past appointments yet.</p>
+                                : past.map(a => (
+                                    <div key={a.id} className="py-3 border-b border-mint-100/60 last:border-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <div>
+                                                <p className="text-sm font-medium text-mint-800">{a.doctor_name} <span className="text-mint-800/50 font-normal">· {a.doctor_specialization}</span></p>
+                                                <p className="text-xs text-mint-800/60">{a.date} · {a.time_slot} · <span className="capitalize">{a.status}</span></p>
+                                            </div>
+                                            <div className="flex gap-2 items-center">
+                                                {a.status === "completed" && !ratings[a.id] && (
+                                                    <button onClick={() => { setRatingForm(a.id); setRatingValue(5); setRatingNote(""); }}
+                                                        className="text-xs px-3 py-1.5 rounded-full bg-mint-50 text-mint-600 border border-mint-100 hover:bg-mint-100">
+                                                        Rate
+                                                    </button>
+                                                )}
+                                                {ratings[a.id] && (
+                                                    <div className="flex items-center gap-0.5">
+                                                        {[...Array(ratings[a.id].stars)].map((_,i) => <Star key={i} size={11} fill="#1F8A4D" stroke="#1F8A4D" />)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {ratingForm === a.id && (
+                                            <div className="mt-3 p-4 rounded-xl bg-mint-50 space-y-3">
+                                                <p className="text-xs font-semibold text-mint-800">Rate {a.doctor_name}</p>
+                                                <StarRating value={ratingValue} onChange={setRatingValue} />
+                                                <textarea rows={2} value={ratingNote} onChange={e => setRatingNote(e.target.value)}
+                                                    placeholder="Short review (optional)"
+                                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-mint-500 resize-none" />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => submitRating(a.id)} className="btn-pill btn-primary text-xs py-2">Submit</button>
+                                                    <button onClick={() => setRatingForm(null)} className="btn-pill btn-ghost text-xs py-2">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </div>
+                )}
+
+                {/* ── PRESCRIPTIONS ── */}
+                {tab === "prescriptions" && (
+                    <div className="space-y-5">
+                        <div>
+                            <span className="overline">Medical records</span>
+                            <h2 className="editorial mt-2 text-4xl text-mint-800">My Prescriptions</h2>
+                            <p className="text-sm text-mint-800/60 mt-1">Download any prescription as a file to share with a pharmacy.</p>
+                        </div>
+                        <div className="space-y-4">
+                            {pres.length === 0
+                                ? (
+                                    <div className="glass rounded-2xl p-10 text-center">
+                                        <FileText size={32} className="text-mint-200 mx-auto mb-3" />
+                                        <p className="text-sm text-mint-800/60">No prescriptions yet. Your doctor will issue them after a consultation.</p>
+                                    </div>
+                                )
+                                : pres.map(p => <PresCard key={p.id} p={p} />)
+                            }
+                        </div>
+                    </div>
+                )}
+
+            </section>
+        </div>
+    );
 }
