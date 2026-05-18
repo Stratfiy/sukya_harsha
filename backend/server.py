@@ -968,6 +968,28 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             status_code=403,
             detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
         )
+
+    # Prevent booking in the past
+    try:
+        booking_date = datetime.strptime(req.date, "%Y-%m-%d").date()
+        if booking_date < datetime.now(timezone.utc).date():
+            raise HTTPException(status_code=400, detail="Cannot book appointments in the past.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format.")
+
+    # Prevent double booking same doctor same day
+    double_book = await db.appointments.find_one({
+        "patient_id": user["id"],
+        "doctor_id": req.doctor_id,
+        "date": req.date,
+        "status": "booked"
+    })
+    if double_book:
+        raise HTTPException(
+            status_code=400,
+            detail="You already have an appointment with this doctor on this date."
+        )
+
     if req.consultation_type == "online" and not doctor.get("online_consultation_enabled"):
         raise HTTPException(status_code=400, detail="This doctor does not offer online consultations")
 
