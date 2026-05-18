@@ -960,12 +960,13 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
     doctor = await db.doctors.find_one({"id": req.doctor_id, "is_approved": True}, {"_id": 0})
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found or not approved")
-        # Block flagged no-show patients
-        patient_record = await db.users.find_one({"id": user["id"]})
-        if patient_record.get("flagged_noshow"):
-            raise HTTPException(
-                status_code=403,
-                detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
+
+    # Block flagged no-show patients
+    patient_record = await db.users.find_one({"id": user["id"]})
+    if patient_record.get("flagged_noshow"):
+        raise HTTPException(
+            status_code=403,
+            detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
         )
     if req.consultation_type == "online" and not doctor.get("online_consultation_enabled"):
         raise HTTPException(status_code=400, detail="This doctor does not offer online consultations")
