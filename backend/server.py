@@ -1038,7 +1038,7 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
         if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
             raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
 
-        # 24-hour cancellation rule
+       # 24-hour cancellation rule
         if req.status == "cancelled" and user["role"] == "patient":
             appt_dt = datetime.fromisoformat(f"{appt['date']}T{appt['time_slot']}:00").replace(tzinfo=timezone.utc)
             hours_until = (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600
@@ -1054,7 +1054,7 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
             recent_cancels = await db.appointments.count_documents({
                 "patient_id": user["id"],
                 "status": "cancelled",
-                "updated_at": {"$gte": week_ago}
+                "created_at": {"$gte": week_ago}
             })
             if recent_cancels >= 3:
                 raise HTTPException(
