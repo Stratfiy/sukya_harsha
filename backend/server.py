@@ -1060,6 +1060,20 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.appointments.update_one({"id": appt_id}, {"$set": update})
     await write_audit(user["id"], "appointment_updated", "appointment", appt_id, request, {"changes": update})
+
+    # Auto-flag patients with repeated no-shows
+    if req.status == "no_show":
+        total_noshows = await db.appointments.count_documents({
+            "patient_id": appt["patient_id"],
+            "status": "no_show"
+        })
+        if total_noshows >= 3:
+            await db.users.update_one(
+                {"id": appt["patient_id"]},
+                {"$set": {"flagged_noshow": True, "flagged_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            await write_audit(user["id"], "patient_flagged_noshow", "user", appt["patient_id"], request, {"total_noshows": total_noshows})
+
     return {**appt, **update}
 
 
