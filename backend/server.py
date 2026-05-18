@@ -1023,9 +1023,36 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
         raise HTTPException(status_code=403, detail="Forbidden")
 
     # SECURITY FIX: Restrict status transitions by role
+    # SECURITY FIX: Restrict status transitions by role
     if req.status:
         if user["role"] == "patient" and req.status not in ("cancelled",):
             raise HTTPException(status_code=403, detail="Patients can only cancel appointments")
+        if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
+            raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
+
+        # 24-hour cancellation rule
+        if req.status == "cancelled" and user["role"] == "patient":
+            appt_dt = datetime.fromisoformat(f"{appt['date']}T{appt['time_slot']}:00").replace(tzinfo=timezone.utc)
+            hours_until = (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+            if hours_until < 24:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Appointments can only be cancelled at least 24 hours in advance."
+                )
+
+        # 3 cancellations per 7 days limit
+        if req.status == "cancelled" and user["role"] == "patient":
+            week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            recent_cancels = await db.appointments.count_documents({
+                "patient_id": user["id"],
+                "status": "cancelled",
+                "updated_at": {"$gte": week_ago}
+            })
+            if recent_cancels >= 3:
+                raise HTTPException(
+                    status_code=429,
+                    detail="You have cancelled 3 appointments this week. Please wait before cancelling again."
+                )
         if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
             raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
 
