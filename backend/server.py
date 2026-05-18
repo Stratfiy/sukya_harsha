@@ -60,7 +60,7 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 resend.api_key = RESEND_API_KEY
 
 # Cookies are same-origin behind ingress so use samesite=lax. secure=True for HTTPS preview.
-COOKIE_OPTS = dict(httponly=True, secure=True, samesite="none", path="/")
+COOKIE_OPTS = dict(httponly=True, secure=True, samesite="lax", path="/", domain=os.environ.get("COOKIE_DOMAIN", ""))
 
 # ---------------- App ----------------
 limiter = Limiter(key_func=get_remote_address)
@@ -154,7 +154,8 @@ def set_session_cookies(response: Response, access: str, refresh: str):
     # CSRF token — readable by JS (NOT httpOnly), double-submit pattern
     csrf = secrets.token_urlsafe(32)
     response.set_cookie("csrf_token", csrf, max_age=REFRESH_TOKEN_DAYS * 86400,
-                        httponly=False, secure=True, samesite="none", path="/")
+                        httponly=False, secure=True, samesite="lax", path="/",
+                        domain=os.environ.get("COOKIE_DOMAIN", ""))
 
 
 def clear_session_cookies(response: Response):
