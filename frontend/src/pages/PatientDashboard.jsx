@@ -156,8 +156,12 @@ export default function PatientDashboard() {
     };
 
     const cancel = async (id) => {
-        await api.patch(`/appointments/${id}`, { status: "cancelled", cancellation_reason: "Cancelled by patient" });
-        load();
+        try {
+            await api.patch(`/appointments/${id}`, { status: "cancelled", cancellation_reason: "Cancelled by patient" });
+            load();
+        } catch (e) {
+            alert(e.response?.data?.detail || "Could not cancel appointment.");
+        }
     };
 
     const submitRating = (apptId) => {
