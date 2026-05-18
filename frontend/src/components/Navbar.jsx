@@ -30,8 +30,10 @@ export default function Navbar() {
     ];
 
     const patientItems = [
-        { to: "/patient/dashboard", label: "Dashboard", end: false },
+        { to: "/", label: "Home", end: true },
+        { to: "/about", label: "About" },
         { to: "/find-doctors", label: "Find Doctors" },
+        { to: "/patient/dashboard", label: "Dashboard" },
     ];
 
     const navItems = user?.role === "patient" ? patientItems
@@ -85,10 +87,7 @@ export default function Navbar() {
                                 <div className="absolute right-0 mt-2 w-52 glass-mint rounded-2xl p-2 z-50 shadow-lg"
                                     onMouseLeave={() => setMenuOpen(false)}
                                     data-testid="navbar-dropdown">
-                                    <Link to={dashboardPath} className="block rounded-xl px-3 py-2 text-sm hover:bg-white/60"
-                                        onClick={() => setMenuOpen(false)} data-testid="navbar-dashboard">
-                                        Dashboard
-                                    </Link>
+                                    
                                     {user.role === "doctor" && (
                                         <Link to="/doctor/profile" className="block rounded-xl px-3 py-2 text-sm hover:bg-white/60"
                                             onClick={() => setMenuOpen(false)}>My Profile</Link>
