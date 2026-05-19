@@ -963,6 +963,18 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
     now_utc = datetime.now(timezone.utc)
     now_ist = now_utc + IST_OFFSET
 
+    # 0. ONE SLOT PER DAY RULE — checked first, before anything else
+    existing_today = await db.appointments.find_one({
+        "patient_id": user["id"],
+        "date": req.date,
+        "status": "booked"
+    })
+    if existing_today:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already have a slot booked on {req.date} with {existing_today['doctor_name']} at {existing_today['time_slot']}. Only one appointment per day is allowed."
+        )
+
     # 1. Doctor must exist and be approved
     doctor = await db.doctors.find_one({"id": req.doctor_id, "is_approved": True}, {"_id": 0})
     if not doctor:
@@ -998,17 +1010,7 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
         if slot_minutes <= now_minutes:
             raise HTTPException(status_code=400, detail="This slot has already passed. Please pick a future slot.")
 
-    # 6. One active booking per day (24-hour window rule)
-    active_booking = await db.appointments.find_one({
-        "patient_id": user["id"],
-        "date": req.date,
-        "status": "booked"
-    })
-    if active_booking:
-        raise HTTPException(
-            status_code=400,
-            detail=f"You have already booked a slot for {req.date} with {active_booking['doctor_name']} at {active_booking['time_slot']}. You cannot book another appointment on the same day."
-        )
+    # 6. (Per-day check already done at step 0)
 
     # 7. Validate slot is available for that day
     avail = await doctor_slots(req.doctor_id, req.date)
