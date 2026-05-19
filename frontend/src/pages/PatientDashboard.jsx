@@ -1,15 +1,39 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import {
-    Calendar, FileText, Sparkles, Search, Heart,
-    Clock, Download, Star, MapPin, Stethoscope,
-    ArrowRight, ChevronDown, ChevronUp, Pill, User
+    Calendar, FileText, Sparkles, Heart, Clock,
+    Download, Star, ChevronDown, ChevronUp, Pill,
+    User, CheckCircle
 } from "lucide-react";
 
-// ─── PDF Generator ────────────────────────────────────────────────────────────
+// ─── Format date: "2026-05-19" → "19 May 2026" ───────────────────────────────
+function fmtDate(iso) {
+    if (!iso) return "";
+    const [y, m, d] = iso.slice(0, 10).split("-");
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${parseInt(d)} ${months[parseInt(m) - 1]} ${y}`;
+}
+
+// ─── IST-aware countdown ──────────────────────────────────────────────────────
+function countdown(dateStr, timeStr) {
+    // Treat date+time as IST (UTC+5:30), convert to UTC for comparison
+    const IST_MS = 5.5 * 60 * 60 * 1000;
+    const [h, m] = timeStr.split(":").map(Number);
+    const slotUTC = new Date(`${dateStr}T00:00:00Z`).getTime() + h * 3600000 + m * 60000 - IST_MS;
+    const diff = slotUTC - Date.now();
+    if (diff <= 0) return null;
+    const dd = Math.floor(diff / 86400000);
+    const hh = Math.floor((diff % 86400000) / 3600000);
+    const mm = Math.floor((diff % 3600000) / 60000);
+    if (dd > 0) return `in ${dd}d ${hh}h`;
+    if (hh > 0) return `in ${hh}h ${mm}m`;
+    return `in ${mm}m`;
+}
+
+// ─── Prescription PDF Generator ───────────────────────────────────────────────
 function generatePrescriptionPDF(prescription) {
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
@@ -34,19 +58,26 @@ function generatePrescriptionPDF(prescription) {
 </style></head><body>
 <div class="header">
   <div><div class="logo">Sukhya <span>Med</span></div><div style="font-size:12px;color:#4A6E59;margin-top:4px">sukhya.com</div></div>
-  <div class="meta"><div><strong>Date:</strong> ${new Date(prescription.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div><div><strong>ID:</strong> ${prescription.id.slice(0,8).toUpperCase()}</div></div>
+  <div class="meta">
+    <div><strong>Date:</strong> ${new Date(prescription.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</div>
+    <div><strong>ID:</strong> ${prescription.id.slice(0,8).toUpperCase()}</div>
+  </div>
 </div>
 <div class="label">Diagnosis</div>
 <div class="diagnosis">${prescription.diagnosis}</div>
 <div class="doctor">Prescribed by <strong>${prescription.doctor_name}</strong></div>
 <div class="rx">℞</div>
-<table><tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr>
-${(prescription.medications||[]).map(m=>`<tr><td class="med">${m.name}</td><td>${m.dosage}</td><td>${m.frequency}</td><td>${m.duration}</td></tr>`).join("")}
+<table>
+  <tr><th>Medication</th><th>Dosage</th><th>Frequency</th><th>Duration</th></tr>
+  ${(prescription.medications||[]).map(m=>`<tr><td class="med">${m.name}</td><td>${m.dosage}</td><td>${m.frequency}</td><td>${m.duration}</td></tr>`).join("")}
 </table>
-${prescription.additional_notes?`<div class="label">Notes</div><div class="notes">${prescription.additional_notes}</div>`:""}
+${prescription.additional_notes ? `<div class="label">Notes</div><div class="notes">${prescription.additional_notes}</div>` : ""}
 <div class="sig">${prescription.doctor_name}<br/>Sukhya Med Verified Doctor</div>
 <div class="warn">This prescription is valid for the patient on record only. Always consult your doctor before altering any medication.</div>
-<div class="foot"><span>© ${new Date().getFullYear()} Sukhya Med</span><span>${new Date(prescription.created_at).toLocaleString("en-IN")}</span></div>
+<div class="foot">
+  <span>© ${new Date().getFullYear()} Sukhya Med</span>
+  <span>${new Date(prescription.created_at).toLocaleString("en-IN")}</span>
+</div>
 </body></html>`;
     const blob = new Blob([html], { type: "text/html" });
     const url = URL.createObjectURL(blob);
@@ -57,15 +88,7 @@ ${prescription.additional_notes?`<div class="label">Notes</div><div class="notes
     URL.revokeObjectURL(url);
 }
 
-function countdown(dateStr, timeStr) {
-    const diff = new Date(`${dateStr}T${timeStr}:00`) - new Date();
-    if (diff <= 0) return null;
-    const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
-    if (d > 0) return `in ${d}d ${h}h`;
-    if (h > 0) return `in ${h}h ${m}m`;
-    return `in ${m}m`;
-}
-
+// ─── Star Rating ──────────────────────────────────────────────────────────────
 function StarRating({ value, onChange }) {
     return (
         <div className="flex gap-1">
@@ -85,33 +108,41 @@ function PresCard({ p }) {
         <div className="rounded-2xl bg-white/70 border border-mint-100">
             <button onClick={() => setOpen(s => !s)}
                 className="w-full flex items-start justify-between gap-3 p-5 text-left">
-                <div className="flex-1">
-                    <p className="font-medium text-mint-800">{p.diagnosis}
-                        {p.is_voided && <span className="ml-2 text-xs text-red-500 border border-red-200 rounded-full px-2 py-0.5">Voided</span>}
+                <div className="flex-1 min-w-0">
+                    <p className="font-medium text-mint-800 truncate">
+                        {p.diagnosis}
+                        {p.is_voided && (
+                            <span className="ml-2 text-xs text-red-500 border border-red-200 rounded-full px-2 py-0.5">Voided</span>
+                        )}
                     </p>
-                    <p className="text-xs text-mint-800/60 mt-0.5">by {p.doctor_name} · {new Date(p.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+                    <p className="text-xs text-mint-800/60 mt-0.5">
+                        by {p.doctor_name} · {fmtDate(p.created_at?.slice(0,10))}
+                    </p>
                     <p className="text-xs text-mint-800/50 mt-1 flex items-center gap-1">
-                        <Pill size={11} className="text-mint-600" />
-                        {(p.medications||[]).map(m => m.name).join(" · ")}
+                        <Pill size={11} className="text-mint-600 flex-shrink-0" />
+                        <span className="truncate">{(p.medications||[]).map(m => m.name).join(" · ")}</span>
                     </p>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+                <div className="flex items-center gap-2 flex-shrink-0">
                     {!p.is_voided && (
-                        <button onClick={e => { e.stopPropagation(); generatePrescriptionPDF(p); }}
+                        <button
+                            onClick={e => { e.stopPropagation(); generatePrescriptionPDF(p); }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-mint-600 text-white text-xs hover:bg-mint-700 transition">
                             <Download size={12} /> Download
                         </button>
                     )}
-                    {open ? <ChevronUp size={16} className="text-mint-800/40" /> : <ChevronDown size={16} className="text-mint-800/40" />}
+                    {open
+                        ? <ChevronUp size={16} className="text-mint-800/40" />
+                        : <ChevronDown size={16} className="text-mint-800/40" />
+                    }
                 </div>
             </button>
-
             {open && (
                 <div className="px-5 pb-5 border-t border-mint-100 pt-4">
                     <div className="hidden sm:grid grid-cols-4 gap-2 text-xs font-semibold text-mint-800/40 uppercase tracking-wider mb-2">
                         <span>Medicine</span><span>Dosage</span><span>Frequency</span><span>Duration</span>
                     </div>
-                    {(p.medications||[]).map((m,i) => (
+                    {(p.medications||[]).map((m, i) => (
                         <div key={i} className="grid grid-cols-2 sm:grid-cols-4 gap-x-2 gap-y-0.5 text-xs py-2 border-b border-mint-50 last:border-0">
                             <span className="font-medium text-mint-800">{m.name}</span>
                             <span className="text-mint-800/60">{m.dosage}</span>
@@ -119,7 +150,9 @@ function PresCard({ p }) {
                             <span className="text-mint-800/60">{m.duration}</span>
                         </div>
                     ))}
-                    {p.additional_notes && <p className="text-xs text-mint-800/60 italic mt-3 pt-3 border-t border-mint-100">{p.additional_notes}</p>}
+                    {p.additional_notes && (
+                        <p className="text-xs text-mint-800/60 italic mt-3 pt-3 border-t border-mint-100">{p.additional_notes}</p>
+                    )}
                 </div>
             )}
         </div>
@@ -149,52 +182,42 @@ export default function PatientDashboard() {
 
     const toggleFav = (a) => {
         const exists = favourites.find(f => f.id === a.doctor_id);
-        const next = exists ? favourites.filter(f => f.id !== a.doctor_id)
+        const next = exists
+            ? favourites.filter(f => f.id !== a.doctor_id)
             : [...favourites, { id: a.doctor_id, name: a.doctor_name, spec: a.doctor_specialization }];
         setFavourites(next);
         localStorage.setItem("sm_favourites", JSON.stringify(next));
-    };
-
-    const cancel = async (id) => {
-        try {
-            await api.patch(`/appointments/${id}`, { status: "cancelled", cancellation_reason: "Cancelled by patient" });
-            load();
-        } catch (e) {
-            alert(e.response?.data?.detail || "Could not cancel appointment.");
-        }
     };
 
     const submitRating = (apptId) => {
         const next = { ...ratings, [apptId]: { stars: ratingValue, note: ratingNote, date: new Date().toISOString() } };
         setRatings(next);
         localStorage.setItem("sm_ratings", JSON.stringify(next));
-        setRatingForm(null); setRatingNote(""); setRatingValue(5);
+        setRatingForm(null);
+        setRatingNote("");
+        setRatingValue(5);
     };
 
-    const now = new Date();
-    // IST-aware: appointment is upcoming if status is booked and slot hasn't passed yet in IST
-    const IST_OFFSET = 5.5 * 60 * 60 * 1000; // 5h30m in ms
-    const nowIST = new Date(Date.now() + IST_OFFSET);
+    // IST-aware: upcoming = booked AND slot hasn't passed in IST
+    const IST_MS = 5.5 * 60 * 60 * 1000;
     const upcoming = appts
         .filter(a => {
             if (a.status !== "booked") return false;
             const [h, m] = a.time_slot.split(":").map(Number);
-            const slotIST = new Date(`${a.date}T00:00:00Z`);
-            slotIST.setUTCHours(h, m, 0, 0);
-            // Add IST offset back so comparison works correctly
-            return slotIST.getTime() > nowIST.getTime() - IST_OFFSET;
+            const slotUTC = new Date(`${a.date}T00:00:00Z`).getTime() + h * 3600000 + m * 60000 - IST_MS;
+            return slotUTC > Date.now();
         })
-        .sort((a,b) => {
-            const da = new Date(`${a.date}T${a.time_slot}:00`);
-            const db2 = new Date(`${b.date}T${b.time_slot}:00`);
-            return da - db2;
-        });
+        .sort((a, b) => new Date(`${a.date}T${a.time_slot}`) - new Date(`${b.date}T${b.time_slot}`));
+
     const past = appts.filter(a => a.status !== "booked");
+
+    // Has an active booking — hide "Book appointment" button
+    const hasActiveBooking = upcoming.length > 0;
 
     return (
         <div className="min-h-screen">
             <Navbar />
-            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-8 sm:pt-10 pb-24 space-y-8 sm:space-y-10" data-testid="patient-dashboard">
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-8 sm:pt-10 pb-24 space-y-8" data-testid="patient-dashboard">
 
                 {/* ── HEADER ── */}
                 <div>
@@ -205,59 +228,85 @@ export default function PatientDashboard() {
                     <p className="mt-2 text-mint-800/70">Your care, all in one place.</p>
                 </div>
 
-                {/* ── REMINDER BANNER ── */}
-                {upcoming[0] && countdown(upcoming[0].date, upcoming[0].time_slot) && (
-                    <div className="glass-mint rounded-2xl px-5 py-4 flex items-center gap-3">
-                        <Clock size={18} className="text-mint-600 flex-shrink-0" />
-                        <p className="text-sm text-mint-800">
-                            <strong>Next:</strong> {upcoming[0].doctor_name} · {upcoming[0].date} at {upcoming[0].time_slot} —{" "}
-                            <span className="text-mint-600 font-semibold">{countdown(upcoming[0].date, upcoming[0].time_slot)}</span>
-                        </p>
-                    </div>
-                )}
+                {/* ── ACTIVE BOOKING BANNER ── */}
+                {hasActiveBooking && (() => {
+                    const a = upcoming[0];
+                    const cd = countdown(a.date, a.time_slot);
+                    return (
+                        <div className="glass-mint rounded-2xl px-5 py-4 flex items-start gap-3">
+                            <Clock size={18} className="text-mint-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-mint-800">Active appointment</p>
+                                <p className="text-sm text-mint-800/80 mt-0.5">
+                                    {a.doctor_name} · {a.doctor_specialization} · {fmtDate(a.date)} at {a.time_slot}
+                                    {cd && <span className="ml-2 text-mint-600 font-semibold">{cd}</span>}
+                                </p>
+                                <p className="text-xs text-mint-800/50 mt-1">
+                                    You cannot book another appointment until this one is completed.
+                                </p>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* ── QUICK STATS ── */}
                 <div className="grid grid-cols-3 gap-2 sm:gap-4">
                     <div className="glass-mint rounded-2xl p-3 sm:p-5">
-                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2"><Calendar size={13} className="text-mint-600" /><p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Upcoming</p></div>
+                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2">
+                            <Calendar size={13} className="text-mint-600" />
+                            <p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Upcoming</p>
+                        </div>
                         <p className="editorial text-3xl sm:text-4xl text-mint-800">{upcoming.length}</p>
                     </div>
                     <div className="glass-mint rounded-2xl p-3 sm:p-5">
-                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2"><FileText size={13} className="text-mint-600" /><p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Prescripts</p></div>
+                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2">
+                            <FileText size={13} className="text-mint-600" />
+                            <p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Prescripts</p>
+                        </div>
                         <p className="editorial text-3xl sm:text-4xl text-mint-800">{pres.length}</p>
                     </div>
                     <div className="glass-mint rounded-2xl p-3 sm:p-5">
-                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2"><Heart size={13} className="text-mint-600" /><p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Saved</p></div>
+                        <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2">
+                            <Heart size={13} className="text-mint-600" />
+                            <p className="overline" style={{fontSize:"0.6rem",letterSpacing:"0.12em"}}>Saved</p>
+                        </div>
                         <p className="editorial text-3xl sm:text-4xl text-mint-800">{favourites.length}</p>
                     </div>
                 </div>
 
                 {/* ── SAVED DOCTORS ── */}
                 {favourites.length > 0 && (
-                    <div className="glass rounded-2xl p-6">
+                    <div className="glass rounded-2xl p-5 sm:p-6">
                         <h2 className="editorial text-2xl text-mint-800 mb-4 flex items-center gap-2">
                             <Heart size={16} className="text-mint-600" /> Saved Doctors
                         </h2>
                         <div className="flex flex-wrap gap-2">
                             {favourites.map(f => (
                                 <Link key={f.id} to={`/doctors/${f.id}`}
-                                    className="flex items-center gap-2 px-4 py-2.5 rounded-full glass border border-mint-100 hover:border-mint-500 transition text-sm">
+                                    className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-full glass border border-mint-100 hover:border-mint-500 transition text-sm">
                                     <User size={13} className="text-mint-600" />
                                     <span className="font-medium text-mint-800">{f.name}</span>
-                                    <span className="text-mint-800/40 text-xs">{f.spec}</span>
+                                    <span className="text-mint-800/40 text-xs hidden sm:inline">{f.spec}</span>
                                 </Link>
                             ))}
                         </div>
                     </div>
                 )}
 
-                {/* ── UPCOMING APPOINTMENTS ── */}
-                <div className="glass rounded-2xl p-6" id="appointments" data-testid="upcoming">
+                {/* ── APPOINTMENTS ── */}
+                <div className="glass rounded-2xl p-5 sm:p-6" id="appointments" data-testid="upcoming">
                     <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                         <h2 className="editorial text-2xl sm:text-3xl text-mint-800">Appointments</h2>
-                        <Link to="/find-doctors" className="btn-pill btn-primary text-xs sm:text-sm py-2 sm:py-2.5 px-4 sm:px-5">
-                            Book appointment
-                        </Link>
+                        {!hasActiveBooking ? (
+                            <Link to="/find-doctors"
+                                className="btn-pill btn-primary text-xs sm:text-sm py-2 sm:py-2.5 px-4 sm:px-5">
+                                Book appointment
+                            </Link>
+                        ) : (
+                            <span className="flex items-center gap-1.5 text-xs text-mint-600 px-3 py-2 rounded-full bg-mint-50 border border-mint-100">
+                                <CheckCircle size={13} /> Active booking
+                            </span>
+                        )}
                     </div>
 
                     {/* Upcoming */}
@@ -265,7 +314,9 @@ export default function PatientDashboard() {
                         <div className="py-6 text-center">
                             <Calendar size={28} className="text-mint-200 mx-auto mb-2" />
                             <p className="text-sm text-mint-800/60">No upcoming appointments.</p>
-                            <Link to="/find-doctors" className="text-mint-600 text-sm underline mt-1 inline-block">Find a doctor</Link>
+                            <Link to="/find-doctors" className="text-mint-600 text-sm underline mt-1 inline-block">
+                                Find a doctor
+                            </Link>
                         </div>
                     ) : (
                         <div className="space-y-3 mb-6">
@@ -273,88 +324,113 @@ export default function PatientDashboard() {
                                 const isFav = favourites.find(f => f.id === a.doctor_id);
                                 const cd = countdown(a.date, a.time_slot);
                                 return (
-                                    <div key={a.id} className="flex flex-wrap items-start sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-xl bg-mint-50/60 border border-mint-100"
+                                    <div key={a.id}
+                                        className="flex flex-wrap items-start sm:items-center justify-between gap-3 p-3 sm:p-4 rounded-xl bg-mint-50/60 border border-mint-100"
                                         data-testid={`appt-${a.id}`}>
                                         <div>
                                             <p className="editorial text-xl text-mint-800">{a.doctor_name}</p>
                                             <p className="text-xs text-mint-700 font-medium">{a.doctor_specialization}</p>
-                                            <p className="text-sm text-mint-800/70 mt-0.5">{a.date} · {a.time_slot}</p>
-                                            {cd && <span className="text-xs text-mint-600 font-semibold">{cd}</span>}
-                                            {a.reason && <p className="text-xs text-mint-800/50 italic mt-0.5">"{a.reason}"</p>}
+                                            <p className="text-sm text-mint-800/70 mt-0.5">
+                                                {fmtDate(a.date)} · {a.time_slot}
+                                            </p>
+                                            {cd && (
+                                                <span className="text-xs text-mint-600 font-semibold">{cd}</span>
+                                            )}
+                                            {a.reason && (
+                                                <p className="text-xs text-mint-800/50 italic mt-0.5">"{a.reason}"</p>
+                                            )}
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => toggleFav(a)}
-                                                className={`p-2 rounded-xl transition ${isFav ? "text-mint-600 bg-mint-100" : "text-mint-800/30 hover:text-mint-600 hover:bg-mint-50"}`}
-                                                title={isFav ? "Remove from saved" : "Save doctor"}>
-                                                <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
-                                            </button>
-
-                                        </div>
+                                        <button
+                                            onClick={() => toggleFav(a)}
+                                            className={`p-2 rounded-xl transition ${isFav ? "text-mint-600 bg-mint-100" : "text-mint-800/30 hover:text-mint-600 hover:bg-mint-50"}`}
+                                            title={isFav ? "Remove from saved" : "Save doctor"}>
+                                            <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
+                                        </button>
                                     </div>
                                 );
                             })}
                         </div>
                     )}
 
-                    {/* Past / History */}
+                    {/* History */}
                     {past.length > 0 && (
-                        <>
-                            <div className="border-t border-mint-100 pt-5 mt-2">
-                                <p className="overline mb-3">History</p>
-                                <div className="space-y-2">
-                                    {past.slice(0, 8).map(a => (
-                                        <div key={a.id} className="py-2.5 border-b border-mint-50 last:border-0">
-                                            <div className="flex items-center justify-between flex-wrap gap-2">
-                                                <div>
-                                                    <p className="text-sm text-mint-800">{a.doctor_name}
-                                                        <span className="text-mint-800/50 font-normal"> · {a.doctor_specialization}</span>
-                                                    </p>
-                                                    <p className="text-xs text-mint-800/50">{a.date} · {a.time_slot} · <span className="capitalize">{a.status}</span></p>
-                                                </div>
-                                                {a.status === "completed" && !ratings[a.id] && (
-                                                    <button onClick={() => { setRatingForm(a.id); setRatingValue(5); setRatingNote(""); }}
-                                                        className="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-600 border border-mint-100 hover:bg-mint-100 transition">
-                                                        Rate doctor
-                                                    </button>
-                                                )}
-                                                {ratings[a.id] && (
-                                                    <div className="flex items-center gap-0.5">
-                                                        {[...Array(ratings[a.id].stars)].map((_,i) => <Star key={i} size={11} fill="#1F8A4D" stroke="#1F8A4D" />)}
-                                                    </div>
-                                                )}
+                        <div className="border-t border-mint-100 pt-5 mt-2">
+                            <p className="overline mb-3">History</p>
+                            <div className="space-y-2">
+                                {past.slice(0, 10).map(a => (
+                                    <div key={a.id} className="py-2.5 border-b border-mint-50 last:border-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <div>
+                                                <p className="text-sm text-mint-800">
+                                                    {a.doctor_name}
+                                                    <span className="text-mint-800/50 font-normal"> · {a.doctor_specialization}</span>
+                                                </p>
+                                                <p className="text-xs text-mint-800/50">
+                                                    {fmtDate(a.date)} · {a.time_slot} ·{" "}
+                                                    <span className={`capitalize font-medium ${
+                                                        a.status === "completed" ? "text-mint-600" :
+                                                        a.status === "no_show" ? "text-amber-600" :
+                                                        a.status === "cancelled" ? "text-red-500" : ""
+                                                    }`}>
+                                                        {a.status.replace("_", " ")}
+                                                    </span>
+                                                </p>
                                             </div>
-                                            {ratingForm === a.id && (
-                                                <div className="mt-3 p-4 rounded-xl bg-mint-50 border border-mint-100 space-y-3">
-                                                    <p className="text-xs font-semibold text-mint-800">Rate your experience with {a.doctor_name}</p>
-                                                    <StarRating value={ratingValue} onChange={setRatingValue} />
-                                                    <textarea rows={2} value={ratingNote} onChange={e => setRatingNote(e.target.value)}
-                                                        placeholder="Short review (optional)"
-                                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-mint-500 resize-none" />
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => submitRating(a.id)} className="btn-pill btn-primary text-xs py-2 px-4">Submit</button>
-                                                        <button onClick={() => setRatingForm(null)} className="btn-pill btn-ghost text-xs py-2 px-4">Cancel</button>
-                                                    </div>
+                                            {a.status === "completed" && !ratings[a.id] && (
+                                                <button
+                                                    onClick={() => { setRatingForm(a.id); setRatingValue(5); setRatingNote(""); }}
+                                                    className="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-600 border border-mint-100 hover:bg-mint-100 transition">
+                                                    Rate doctor
+                                                </button>
+                                            )}
+                                            {ratings[a.id] && (
+                                                <div className="flex items-center gap-0.5">
+                                                    {[...Array(ratings[a.id].stars)].map((_, i) => (
+                                                        <Star key={i} size={11} fill="#1F8A4D" stroke="#1F8A4D" />
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
-                                </div>
+                                        {ratingForm === a.id && (
+                                            <div className="mt-3 p-4 rounded-xl bg-mint-50 border border-mint-100 space-y-3">
+                                                <p className="text-xs font-semibold text-mint-800">
+                                                    Rate your experience with {a.doctor_name}
+                                                </p>
+                                                <StarRating value={ratingValue} onChange={setRatingValue} />
+                                                <textarea
+                                                    rows={2}
+                                                    value={ratingNote}
+                                                    onChange={e => setRatingNote(e.target.value)}
+                                                    placeholder="Short review (optional)"
+                                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-mint-500 resize-none" />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => submitRating(a.id)} className="btn-pill btn-primary text-xs py-2 px-4">Submit</button>
+                                                    <button onClick={() => setRatingForm(null)} className="btn-pill btn-ghost text-xs py-2 px-4">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
 
                 {/* ── PRESCRIPTIONS ── */}
-                <div className="glass rounded-2xl p-6" id="prescriptions" data-testid="prescriptions">
+                <div className="glass rounded-2xl p-5 sm:p-6" id="prescriptions" data-testid="prescriptions">
                     <div className="flex items-center justify-between mb-2">
-                        <h2 className="editorial text-3xl text-mint-800">Prescriptions</h2>
+                        <h2 className="editorial text-2xl sm:text-3xl text-mint-800">Prescriptions</h2>
                         <span className="text-xs text-mint-800/50">{pres.length} total</span>
                     </div>
-                    <p className="text-sm text-mint-800/60 mb-5">Click any prescription to expand. Download as a file to share with a pharmacy.</p>
+                    <p className="text-sm text-mint-800/60 mb-5">
+                        Click any prescription to expand. Download as a file to share with a pharmacy.
+                    </p>
                     {pres.length === 0 ? (
                         <div className="py-8 text-center">
                             <FileText size={28} className="text-mint-200 mx-auto mb-2" />
-                            <p className="text-sm text-mint-800/60">Your doctor will issue prescriptions after a consultation.</p>
+                            <p className="text-sm text-mint-800/60">
+                                Your doctor will issue prescriptions after a consultation.
+                            </p>
                         </div>
                     ) : (
                         <div className="space-y-3">
