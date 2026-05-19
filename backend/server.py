@@ -969,6 +969,51 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             status_code=403,
             detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
         )
+        # Cooling period after cancellations
+    now_utc = datetime.now(timezone.utc)
+    week_ago = (now_utc - timedelta(days=7)).isoformat()
+
+    recent_cancels = await db.appointments.count_documents({
+        "patient_id": user["id"],
+        "status": "cancelled",
+        "created_at": {"$gte": week_ago}
+    })
+
+    if recent_cancels >= 3:
+        raise HTTPException(
+            status_code=429,
+            detail="You have cancelled 3 appointments this week. You are blocked from booking for 7 days."
+        )
+
+    if recent_cancels >= 2:
+        # Check last cancel was less than 48 hours ago
+        last_cancel = await db.appointments.find_one(
+            {"patient_id": user["id"], "status": "cancelled"},
+            sort=[("updated_at", -1)]
+        )
+        if last_cancel:
+            last_cancel_dt = datetime.fromisoformat(last_cancel["updated_at"])
+            hours_since = (now_utc - last_cancel_dt).total_seconds() / 3600
+            if hours_since < 48:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"You must wait {int(48 - hours_since)} more hours before booking again."
+                )
+
+    if recent_cancels >= 1:
+        # Check last cancel was less than 24 hours ago
+        last_cancel = await db.appointments.find_one(
+            {"patient_id": user["id"], "status": "cancelled"},
+            sort=[("updated_at", -1)]
+        )
+        if last_cancel:
+            last_cancel_dt = datetime.fromisoformat(last_cancel["updated_at"])
+            hours_since = (now_utc - last_cancel_dt).total_seconds() / 3600
+            if hours_since < 24:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"You must wait {int(24 - hours_since)} more hours before booking again."
+                )
 
     # 3. Prevent booking in the past
     try:
