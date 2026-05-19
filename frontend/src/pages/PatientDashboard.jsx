@@ -4,7 +4,7 @@ import Navbar from "../components/Navbar";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import {
-    Calendar, FileText, Sparkles, X, Search, Heart,
+    Calendar, FileText, Sparkles, Search, Heart,
     Clock, Download, Star, MapPin, Stethoscope,
     ArrowRight, ChevronDown, ChevronUp, Pill, User
 } from "lucide-react";
@@ -288,11 +288,7 @@ export default function PatientDashboard() {
                                                 title={isFav ? "Remove from saved" : "Save doctor"}>
                                                 <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
                                             </button>
-                                            <button onClick={() => cancel(a.id)}
-                                                className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-red-200 text-red-500 text-xs hover:bg-red-50 transition"
-                                                data-testid={`cancel-${a.id}`}>
-                                                <X size={12} /> Cancel
-                                            </button>
+
                                         </div>
                                     </div>
                                 );
