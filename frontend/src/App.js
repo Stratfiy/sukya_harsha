@@ -57,6 +57,7 @@ function App() {
 
                     <Route path="/patient/dashboard" element={<ProtectedRoute roles={["patient"]}><PatientDashboard /></ProtectedRoute>} />
                     <Route path="/doctor/dashboard" element={<ProtectedRoute roles={["doctor"]}><DoctorDashboard /></ProtectedRoute>} />
+                    <Route path="/doctor/setup" element={<ProtectedRoute roles={["doctor"]}><DoctorDashboard /></ProtectedRoute>} />
                     <Route path="/doctor/profile" element={<ProtectedRoute roles={["doctor"]}><DoctorDashboard /></ProtectedRoute>} />
                     <Route path="/doctor/google-calendar/callback" element={<ProtectedRoute roles={["doctor"]}><GoogleCalendarCallback /></ProtectedRoute>} />
                     <Route path="/admin/dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
