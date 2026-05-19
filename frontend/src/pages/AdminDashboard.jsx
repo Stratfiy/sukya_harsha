@@ -76,6 +76,7 @@ export default function AdminDashboard() {
 
                 {tab === "doctors" && (
                     <div className="mt-8 space-y-8">
+                        <InviteDoctorCard hospitals={hospitals} onInvited={load} />
                         <Card title="Pending approval">
                             {pending.length === 0 ? <p className="text-sm text-mint-800/60">No pending doctors.</p> : (
                                 <ul className="divide-y divide-mint-100">
@@ -277,5 +278,50 @@ function HospitalAdmin({ hospitals, reload }) {
                 </tbody>
             </table>
         </Card>
+    );
+}
+
+function InviteDoctorCard({ hospitals, onInvited }) {
+    const [email, setEmail] = useState("");
+    const [hospitalId, setHospitalId] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [result, setResult] = useState(null);
+
+    const invite = async () => {
+        if (!email || !hospitalId) return;
+        setBusy(true); setResult(null);
+        try {
+            const { data } = await api.post("/admin/invite-doctor", { email, hospital_id: hospitalId });
+            setResult({ success: true, email: data.email });
+            setEmail(""); setHospitalId("");
+            onInvited();
+        } catch (e) {
+            setResult({ success: false, error: e.response?.data?.detail || "Failed to invite doctor." });
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="glass-mint rounded-2xl p-5">
+            <h3 className="editorial text-2xl text-mint-800 mb-1">Invite a doctor</h3>
+            <p className="text-sm text-mint-800/60 mb-4">Enter the doctor's email and select their hospital. They'll receive an invite with a temporary password.</p>
+            <div className="flex flex-wrap gap-2">
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="doctor@email.com"
+                    className="rounded-xl border border-mint-100 bg-white/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 flex-1 min-w-48" />
+                <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}
+                    className="rounded-xl border border-mint-100 bg-white/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500">
+                    <option value="">— Select hospital —</option>
+                    {hospitals.map(h => <option key={h.id} value={h.id}>{h.name} · {h.area}</option>)}
+                </select>
+                <button onClick={invite} disabled={busy || !email || !hospitalId}
+                    className="btn-pill btn-primary text-sm disabled:opacity-50">
+                    {busy ? "Sending…" : <><Plus size={14} /> Send invite</>}
+                </button>
+            </div>
+            {result?.success && <p className="mt-2 text-sm text-mint-600">✓ Invite sent to {result.email}</p>}
+            {result?.error && <p className="mt-2 text-sm text-red-600">{result.error}</p>}
+        </div>
     );
 }
