@@ -133,7 +133,17 @@ export default function DoctorProfile() {
                             <p className="mt-4 text-sm text-mint-800/60" data-testid="no-slots">No slots available on this day. Try another date.</p>
                         ) : (
                             <div className="mt-4 flex flex-wrap gap-2" data-testid="slot-grid">
-                                {slotData.slots.map((s) => {
+                                {slotData.slots.filter((s) => {
+                                    // Hide slots that have already passed today (IST = UTC+5:30)
+                                    const IST_MS = 5.5 * 60 * 60 * 1000;
+                                    const nowIST = new Date(Date.now() + IST_MS);
+                                    const todayIST = nowIST.toISOString().slice(0, 10);
+                                    if (date !== todayIST) return true;
+                                    const [h, m] = s.time.split(":").map(Number);
+                                    const slotMins = h * 60 + m;
+                                    const nowMins = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes();
+                                    return slotMins > nowMins;
+                                }).map((s) => {
                                     const active = selectedSlot?.time === s.time;
                                     return (
                                         <button key={s.time} onClick={() => setSelectedSlot(s)}
