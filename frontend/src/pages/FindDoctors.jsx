@@ -36,9 +36,9 @@ export default function FindDoctors() {
     return (
         <div className="min-h-screen">
             <Navbar />
-            <section className="mx-auto max-w-7xl px-6 pt-12 pb-20">
+            <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 sm:pt-12 pb-20">
                 <span className="overline">Find your doctor</span>
-                <h1 className="editorial mt-3 text-5xl text-mint-800">
+                <h1 className="editorial mt-3 text-3xl sm:text-5xl text-mint-800">
                     Start with your <em className="italic text-mint-600">area</em>.
                 </h1>
                 <p className="mt-3 text-mint-800/70 max-w-xl">Pick your neighbourhood — we'll show hospitals and the specialists they trust.</p>
@@ -51,7 +51,7 @@ export default function FindDoctors() {
                             data-testid="find-search" />
                     </div>
                     <select value={specialty} onChange={(e) => setSpecialty(e.target.value)}
-                        className="bg-white/70 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500" data-testid="find-specialty">
+                        className="bg-white/70 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500 w-full sm:w-auto" data-testid="find-specialty">
                         <option value="">All specialties</option>
                         {specialties.map((s) => <option key={s}>{s}</option>)}
                     </select>
@@ -82,7 +82,7 @@ export default function FindDoctors() {
 
                 {/* Hospitals grid */}
                 <div className="mt-8">
-                    <h2 className="editorial text-3xl text-mint-800">
+                    <h2 className="editorial text-2xl sm:text-3xl text-mint-800">
                         {selectedArea ? `Hospitals in ${selectedArea}` : "All hospitals"}
                     </h2>
                     {loading ? <p className="mt-6 text-mint-800/60">Loading…</p> : (
@@ -91,7 +91,7 @@ export default function FindDoctors() {
                                 <Link key={h.id} to={`/hospitals/${h.id}`}
                                     className="glass rounded-2xl overflow-hidden hover:-translate-y-1 transition-transform"
                                     data-testid={`hospital-card-${h.id}`}>
-                                    <div className="h-36 w-full relative">
+                                    <div className="h-32 sm:h-36 w-full relative">
                                         <img src={h.image_url} alt={h.name} className="absolute inset-0 w-full h-full object-cover" />
                                         <div className="absolute inset-0 bg-gradient-to-t from-mint-800/40 to-transparent" />
                                     </div>
