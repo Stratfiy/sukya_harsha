@@ -963,16 +963,23 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
     now_utc = datetime.now(timezone.utc)
     now_ist = now_utc + IST_OFFSET
 
-    # 0. ONE SLOT PER DAY RULE — checked first, before anything else
-    existing_today = await db.appointments.find_one({
-        "patient_id": user["id"],
-        "date": req.date,
-        "status": "booked"
-    })
-    if existing_today:
+    # 0. 24-HOUR COOLDOWN — if patient booked anything in the last 24 hours, block
+    cutoff_time = (now_utc - timedelta(hours=24)).isoformat()
+    recent_booking = await db.appointments.find_one(
+        {
+            "patient_id": user["id"],
+            "status": "booked",
+            "created_at": {"$gte": cutoff_time}
+        },
+        sort=[("created_at", -1)]
+    )
+    if recent_booking:
+        booked_at = datetime.fromisoformat(recent_booking["created_at"].replace("Z", "+00:00"))
+        can_book_at_utc = booked_at + timedelta(hours=24)
+        can_book_at_ist = can_book_at_utc + IST_OFFSET
         raise HTTPException(
             status_code=400,
-            detail=f"You already have a slot booked on {req.date} with {existing_today['doctor_name']} at {existing_today['time_slot']}. Only one appointment per day is allowed."
+            detail=f"You already have an active booking with {recent_booking['doctor_name']} on {recent_booking['date']} at {recent_booking['time_slot']}. You can book again after {can_book_at_ist.strftime('%d %b at %I:%M %p')} IST."
         )
 
     # 1. Doctor must exist and be approved
