@@ -957,11 +957,12 @@ async def _push_to_doctor_calendar(doctor: dict, appt: dict):
 @api.post("/appointments")
 @limiter.limit("10/minute")
 async def book_appointment(req: AppointmentCreate, request: Request, user: dict = Depends(require_role("patient")), _csrf=Depends(verify_csrf)):
+    # 1. Check doctor exists and is approved
     doctor = await db.doctors.find_one({"id": req.doctor_id, "is_approved": True}, {"_id": 0})
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found or not approved")
 
-    # Block flagged no-show patients
+    # 2. Block flagged no-show patients
     patient_record = await db.users.find_one({"id": user["id"]})
     if patient_record.get("flagged_noshow"):
         raise HTTPException(
@@ -969,7 +970,7 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
         )
 
-    # Prevent booking in the past
+    # 3. Prevent booking in the past
     try:
         booking_date = datetime.strptime(req.date, "%Y-%m-%d").date()
         if booking_date < datetime.now(timezone.utc).date():
@@ -977,29 +978,42 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format.")
 
-    # Prevent double booking same doctor same day
-    double_book = await db.appointments.find_one({
+    # 4. One appointment per doctor per day per patient (any slot)
+    same_day_book = await db.appointments.find_one({
         "patient_id": user["id"],
         "doctor_id": req.doctor_id,
         "date": req.date,
         "status": "booked"
     })
-    if double_book:
+    if same_day_book:
         raise HTTPException(
             status_code=400,
-            detail="You already have an appointment with this doctor on this date."
+            detail="You already have an appointment with this doctor on this date. Only one appointment per doctor per day is allowed."
         )
 
+    # 5. One total appointment per day across ALL doctors (prevent slot hoarding)
+    any_day_book = await db.appointments.find_one({
+        "patient_id": user["id"],
+        "date": req.date,
+        "status": "booked"
+    })
+    if any_day_book:
+        raise HTTPException(
+            status_code=400,
+            detail=f"You already have an appointment on {req.date}. Only one appointment per day is allowed."
+        )
+
+    # 6. Check online consultation availability
     if req.consultation_type == "online" and not doctor.get("online_consultation_enabled"):
         raise HTTPException(status_code=400, detail="This doctor does not offer online consultations")
 
-    # Check slot is in availability for that day
+    # 7. Check slot is in availability for that day
     avail = await doctor_slots(req.doctor_id, req.date)
     available_times = [s["time"] for s in avail["slots"]]
     if req.time_slot not in available_times:
         raise HTTPException(status_code=400, detail="Selected slot is not available")
 
-    # Concurrency safety: ensure no existing booking for that exact slot
+    # 8. Concurrency safety: ensure no existing booking for that exact slot
     existing = await db.appointments.find_one({"doctor_id": req.doctor_id, "date": req.date, "time_slot": req.time_slot, "status": "booked"})
     if existing:
         raise HTTPException(status_code=409, detail="Slot just got booked. Please pick another.")
@@ -1052,15 +1066,15 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
     if user["role"] == "doctor" and appt["doctor_id"] != user["id"]:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    # SECURITY FIX: Restrict status transitions by role
-    # SECURITY FIX: Restrict status transitions by role
+    # Restrict status transitions by role
     if req.status:
+        # Role-based status restrictions
         if user["role"] == "patient" and req.status not in ("cancelled",):
             raise HTTPException(status_code=403, detail="Patients can only cancel appointments")
         if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
             raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
 
-       # 24-hour cancellation rule
+        # 24-hour cancellation rule (patients only)
         if req.status == "cancelled" and user["role"] == "patient":
             appt_dt = datetime.fromisoformat(f"{appt['date']}T{appt['time_slot']}:00").replace(tzinfo=timezone.utc)
             hours_until = (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600
@@ -1070,7 +1084,7 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
                     detail="Appointments can only be cancelled at least 24 hours in advance."
                 )
 
-        # 3 cancellations per 7 days limit
+        # Max 3 cancellations per 7 days (patients only)
         if req.status == "cancelled" and user["role"] == "patient":
             week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
             recent_cancels = await db.appointments.count_documents({
@@ -1083,8 +1097,6 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
                     status_code=429,
                     detail="You have cancelled 3 appointments this week. Please wait before cancelling again."
                 )
-        if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
-            raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
 
     update = {k: v for k, v in req.model_dump(exclude_none=True).items()}
     update["updated_at"] = datetime.now(timezone.utc).isoformat()
