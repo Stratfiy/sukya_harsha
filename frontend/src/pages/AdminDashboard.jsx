@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import api, { formatApiError } from "../lib/api";
-import { Users, Stethoscope, Calendar, IndianRupee, CheckCircle2, XCircle, Building, Plus, Trash2, Shield } from "lucide-react";
+import {
+    Users, Stethoscope, Calendar, IndianRupee, CheckCircle2, XCircle,
+    Building, Plus, Trash2, AlertCircle, Clock, Activity,
+    TrendingUp, UserCheck, UserX, RefreshCw
+} from "lucide-react";
 
 const SPECIALTIES = [
-    "Cardiology", "Dermatology", "Neurology", "Orthopedics", "Pediatrics",
-    "Psychiatry", "General Medicine", "ENT", "Ophthalmology", "Gynecology", "Dentistry",
+    "Cardiology", "Dermatology", "Neurology", "Orthopedics", "Paediatrics",
+    "Psychiatry", "General Medicine", "ENT", "Ophthalmology", "Gynaecology",
+    "Dentistry", "Oncology", "Gastroenterology", "Pulmonology", "Urology",
 ];
 
 export default function AdminDashboard() {
@@ -17,12 +22,15 @@ export default function AdminDashboard() {
     const [hospitals, setHospitals] = useState([]);
     const [audit, setAudit] = useState([]);
     const [error, setError] = useState("");
+    const [actionLoading, setActionLoading] = useState({});
+    const [actionMsg, setActionMsg] = useState("");
 
     const load = async () => {
         try {
             const [s, p, d, u, h, a] = await Promise.all([
-                api.get("/admin/stats"), api.get("/admin/doctors/pending"), api.get("/admin/doctors"),
-                api.get("/admin/users"), api.get("/hospitals"), api.get("/admin/audit-logs"),
+                api.get("/admin/stats"), api.get("/admin/doctors/pending"),
+                api.get("/admin/doctors"), api.get("/admin/users"),
+                api.get("/hospitals"), api.get("/admin/audit-logs"),
             ]);
             setStats(s.data); setPending(p.data); setAllDoctors(d.data);
             setUsers(u.data); setHospitals(h.data); setAudit(a.data);
@@ -32,174 +40,349 @@ export default function AdminDashboard() {
     };
     useEffect(() => { load(); }, []);
 
-    const approveDoctor = async (id, approved) => {
-        await api.post(`/admin/doctors/${id}/${approved ? "approve" : "reject"}`, { reason: approved ? "" : "Pending docs" });
-        load();
+    // Fixed: proper await + error handling + loading state
+    const approveDoctor = async (id, approve) => {
+        setActionLoading(l => ({ ...l, [id]: approve ? "approving" : "rejecting" }));
+        setError("");
+        try {
+            await api.post(`/admin/doctors/${id}/${approve ? "approve" : "reject"}`,
+                { reason: approve ? "" : "Rejected by admin" }
+            );
+            setActionMsg(approve ? "Doctor approved successfully." : "Doctor rejected.");
+            setTimeout(() => setActionMsg(""), 3000);
+            await load();
+        } catch (e) {
+            setError(formatApiError(e.response?.data?.detail));
+        } finally {
+            setActionLoading(l => ({ ...l, [id]: null }));
+        }
     };
 
     const toggleActive = async (uid, active) => {
-        await api.patch(`/admin/users/${uid}/active`, { is_active: active });
-        load();
+        setActionLoading(l => ({ ...l, [uid]: "toggling" }));
+        try {
+            await api.patch(`/admin/users/${uid}/active`, { is_active: active });
+            await load();
+        } catch (e) {
+            setError(formatApiError(e.response?.data?.detail));
+        } finally {
+            setActionLoading(l => ({ ...l, [uid]: null }));
+        }
     };
+
+    const tabs = [
+        ["overview", "Overview"],
+        ["doctors", `Doctors${pending.length > 0 ? ` (${pending.length} pending)` : ""}`],
+        ["users", "Users"],
+        ["hospitals", "Hospitals"],
+        ["audit", "Audit logs"],
+    ];
 
     return (
         <div className="min-h-screen">
             <Navbar />
-            <section className="mx-auto max-w-7xl px-6 pt-10 pb-20" data-testid="admin-dashboard">
+            <section className="mx-auto max-w-7xl px-4 sm:px-6 pt-8 pb-20" data-testid="admin-dashboard">
                 <span className="overline">Admin panel</span>
-                <h1 className="editorial mt-2 text-5xl text-mint-800">Operations <em className="italic text-mint-600">overview</em></h1>
-                {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+                <h1 className="editorial mt-2 text-4xl sm:text-5xl text-mint-800">
+                    Operations <em className="italic text-mint-600">overview</em>
+                </h1>
 
-                <div className="mt-8 flex flex-wrap gap-2" data-testid="admin-tabs">
-                    {[
-                        ["overview", "Overview"],
-                        ["doctors", `Doctors (${pending.length} pending)`],
-                        ["users", "Users"],
-                        ["hospitals", "Hospitals"],
-                        ["audit", "Audit logs"],
-                    ].map(([k, label]) => (
-                        <button key={k} onClick={() => setTab(k)} className={`btn-pill text-sm ${tab === k ? "btn-primary" : "btn-ghost"}`} data-testid={`tab-${k}`}>
+                {error && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                        <AlertCircle size={15} /> {error}
+                    </div>
+                )}
+                {actionMsg && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-mint-700 bg-mint-50 border border-mint-100 rounded-xl px-4 py-3">
+                        <CheckCircle2 size={15} /> {actionMsg}
+                    </div>
+                )}
+
+                {/* Pending banner */}
+                {pending.length > 0 && tab !== "doctors" && (
+                    <button onClick={() => setTab("doctors")}
+                        className="mt-4 w-full sm:w-auto flex items-center gap-3 glass-mint rounded-2xl px-5 py-3 border border-mint-200 hover:border-mint-400 transition text-left">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                            <Clock size={15} className="text-amber-600" />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-mint-800">{pending.length} doctor{pending.length > 1 ? "s" : ""} awaiting approval</p>
+                            <p className="text-xs text-mint-800/50">Click to review and approve → </p>
+                        </div>
+                    </button>
+                )}
+
+                {/* Tabs */}
+                <div className="mt-6 flex flex-wrap gap-2" data-testid="admin-tabs">
+                    {tabs.map(([k, label]) => (
+                        <button key={k} onClick={() => setTab(k)}
+                            className={`btn-pill text-sm relative ${tab === k ? "btn-primary" : "btn-ghost"}`}
+                            data-testid={`tab-${k}`}>
                             {label}
+                            {k === "doctors" && pending.length > 0 && tab !== "doctors" && (
+                                <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full text-white text-[9px] flex items-center justify-center font-bold">
+                                    {pending.length}
+                                </span>
+                            )}
                         </button>
                     ))}
                 </div>
 
+                {/* OVERVIEW */}
                 {tab === "overview" && stats && (
-                    <div className="mt-8 grid sm:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="overview-stats">
-                        <Stat icon={Users} label="Patients" value={stats.patients} />
-                        <Stat icon={Stethoscope} label="Doctors" value={stats.doctors} sub={`${stats.approved_doctors} approved · ${stats.pending_doctors} pending`} />
-                        <Stat icon={Building} label="Hospitals" value={stats.hospitals} />
-                        <Stat icon={IndianRupee} label="Revenue" value={`₹${stats.revenue.toLocaleString()}`} />
-                        <Stat icon={Calendar} label="Appointments" value={stats.appointments} sub={`${stats.booked} booked · ${stats.completed} done`} />
+                    <div className="mt-8 space-y-6">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" data-testid="overview-stats">
+                            <StatCard icon={Users} label="Patients" value={stats.patients} color="mint" />
+                            <StatCard icon={Stethoscope} label="Doctors" value={stats.approved_doctors}
+                                sub={`${stats.pending_doctors} pending`} color="mint" />
+                            <StatCard icon={Building} label="Hospitals" value={stats.hospitals} color="mint" />
+                            <StatCard icon={Calendar} label="Appointments" value={stats.appointments}
+                                sub={`${stats.booked} booked · ${stats.completed} done`} color="mint" />
+                        </div>
+                        <div className="glass rounded-2xl p-5 sm:p-6">
+                            <h2 className="editorial text-2xl text-mint-800 mb-4">Platform health</h2>
+                            <div className="grid sm:grid-cols-3 gap-4">
+                                <div className="rounded-xl bg-mint-50/60 border border-mint-100 p-4">
+                                    <p className="text-xs text-mint-800/50 uppercase tracking-wider mb-1">Revenue</p>
+                                    <p className="editorial text-2xl text-mint-800">₹{(stats.revenue || 0).toLocaleString()}</p>
+                                </div>
+                                <div className="rounded-xl bg-mint-50/60 border border-mint-100 p-4">
+                                    <p className="text-xs text-mint-800/50 uppercase tracking-wider mb-1">Completion rate</p>
+                                    <p className="editorial text-2xl text-mint-800">
+                                        {stats.appointments > 0 ? Math.round((stats.completed / stats.appointments) * 100) : 0}%
+                                    </p>
+                                </div>
+                                <div className="rounded-xl bg-amber-50 border border-amber-100 p-4">
+                                    <p className="text-xs text-amber-700/70 uppercase tracking-wider mb-1">Pending approvals</p>
+                                    <p className="editorial text-2xl text-amber-700">{stats.pending_doctors}</p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
 
+                {/* DOCTORS */}
                 {tab === "doctors" && (
-                    <div className="mt-8 space-y-8">
-                        <InviteDoctorCard hospitals={hospitals} onInvited={load} />
-                        <Card title="Pending approval">
-                            {pending.length === 0 ? <p className="text-sm text-mint-800/60">No pending doctors.</p> : (
-                                <ul className="divide-y divide-mint-100">
-                                    {pending.map((d) => (
-                                        <li key={d.id} className="py-4 flex flex-wrap items-start justify-between gap-3" data-testid={`pending-${d.id}`}>
-                                            <div>
-                                                <p className="font-medium text-mint-800">{d.name} <span className="text-xs text-mint-600">· {d.specialization}</span></p>
-                                                <p className="text-xs text-mint-800/60">{d.email} · License {d.license_number} · {d.hospital?.name || "no hospital"}</p>
-                                                <p className="text-xs text-mint-800/70 mt-1 italic">{d.bio}</p>
+                    <div className="mt-8 space-y-6">
+                        {/* Pending */}
+                        <div className="glass rounded-2xl p-5 sm:p-6">
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                                    <Clock size={15} className="text-amber-600" />
+                                </div>
+                                <div>
+                                    <h2 className="editorial text-2xl text-mint-800">Pending approval</h2>
+                                    <p className="text-xs text-mint-800/50">{pending.length} doctor{pending.length !== 1 ? "s" : ""} waiting</p>
+                                </div>
+                            </div>
+
+                            {pending.length === 0 ? (
+                                <div className="py-6 text-center">
+                                    <CheckCircle2 size={28} className="text-mint-300 mx-auto mb-2" />
+                                    <p className="text-sm text-mint-800/60">All doctors are reviewed. Nothing pending.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {pending.map(d => (
+                                        <div key={d.id} className="rounded-2xl bg-white/60 border border-mint-100 p-4 flex flex-wrap items-start justify-between gap-4"
+                                            data-testid={`pending-${d.id}`}>
+                                            <div className="flex items-start gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-mint-100 flex items-center justify-center flex-shrink-0">
+                                                    <Stethoscope size={16} className="text-mint-600" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-semibold text-mint-800">
+                                                        {d.name || "—"}
+                                                        <span className="ml-2 text-xs text-mint-600 font-normal">{d.specialization}</span>
+                                                    </p>
+                                                    <p className="text-xs text-mint-800/60 mt-0.5">
+                                                        {d.email} · License: <strong>{d.license_number || "not set"}</strong>
+                                                    </p>
+                                                    <p className="text-xs text-mint-800/50 mt-0.5">
+                                                        {d.hospital?.name || "No hospital"} · {d.hospital?.area || ""}
+                                                    </p>
+                                                    {d.bio && <p className="text-xs text-mint-800/40 italic mt-1 max-w-md truncate">"{d.bio}"</p>}
+                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <button onClick={() => approveDoctor(d.id, true)} className="btn-pill btn-primary text-xs" data-testid={`approve-${d.id}`}><CheckCircle2 size={12} /> Approve</button>
-                                                <button onClick={() => approveDoctor(d.id, false)} className="btn-pill btn-ghost text-xs text-red-600" data-testid={`reject-${d.id}`}><XCircle size={12} /> Reject</button>
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <button
+                                                    onClick={() => approveDoctor(d.id, true)}
+                                                    disabled={!!actionLoading[d.id]}
+                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-mint-600 text-white text-xs font-medium hover:bg-mint-700 transition disabled:opacity-50"
+                                                    data-testid={`approve-${d.id}`}>
+                                                    {actionLoading[d.id] === "approving"
+                                                        ? <><RefreshCw size={11} className="animate-spin" /> Approving…</>
+                                                        : <><UserCheck size={12} /> Approve</>
+                                                    }
+                                                </button>
+                                                <button
+                                                    onClick={() => approveDoctor(d.id, false)}
+                                                    disabled={!!actionLoading[d.id]}
+                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-full border border-red-200 text-red-600 text-xs font-medium hover:bg-red-50 transition disabled:opacity-50"
+                                                    data-testid={`reject-${d.id}`}>
+                                                    {actionLoading[d.id] === "rejecting"
+                                                        ? <><RefreshCw size={11} className="animate-spin" /> Rejecting…</>
+                                                        : <><UserX size={12} /> Reject</>
+                                                    }
+                                                </button>
                                             </div>
-                                        </li>
+                                        </div>
                                     ))}
-                                </ul>
+                                </div>
                             )}
-                        </Card>
-                        <Card title="All doctors">
+                        </div>
+
+                        {/* All doctors table */}
+                        <div className="glass rounded-2xl p-5 sm:p-6">
+                            <h2 className="editorial text-2xl text-mint-800 mb-4">All doctors</h2>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-mint-800/50 text-xs uppercase tracking-wider border-b border-mint-100">
+                                            <th className="pb-3 pr-4">Doctor</th>
+                                            <th className="pb-3 pr-4">Specialty</th>
+                                            <th className="pb-3 pr-4">Hospital</th>
+                                            <th className="pb-3 pr-4">Status</th>
+                                            <th className="pb-3 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-mint-50">
+                                        {allDoctors.map(d => (
+                                            <tr key={d.id} data-testid={`admin-doc-${d.id}`}>
+                                                <td className="py-3 pr-4 font-medium text-mint-800">{d.name || "—"}</td>
+                                                <td className="py-3 pr-4 text-mint-800/70 text-xs">{d.specialization}</td>
+                                                <td className="py-3 pr-4 text-mint-800/70 text-xs">{d.hospital?.name || "—"}</td>
+                                                <td className="py-3 pr-4">
+                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium
+                                                        ${d.is_approved ? "bg-mint-100 text-mint-700" : "bg-amber-50 text-amber-700"}`}>
+                                                        {d.is_approved ? "✓ Approved" : "Pending"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <button
+                                                        onClick={() => approveDoctor(d.id, !d.is_approved)}
+                                                        disabled={!!actionLoading[d.id]}
+                                                        className={`text-xs px-3 py-1.5 rounded-full border transition disabled:opacity-50
+                                                            ${d.is_approved
+                                                                ? "border-red-200 text-red-600 hover:bg-red-50"
+                                                                : "border-mint-300 text-mint-700 hover:bg-mint-50"}`}>
+                                                        {actionLoading[d.id] ? <RefreshCw size={11} className="inline animate-spin" />
+                                                            : d.is_approved ? "Suspend" : "Approve"}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* USERS */}
+                {tab === "users" && (
+                    <div className="mt-8 glass rounded-2xl p-5 sm:p-6">
+                        <h2 className="editorial text-2xl text-mint-800 mb-4">All users</h2>
+                        <div className="overflow-x-auto">
                             <table className="w-full text-sm">
-                                <thead className="text-left text-mint-800/60 text-xs uppercase">
-                                    <tr><th className="py-2">Doctor</th><th>Specialty</th><th>Hospital</th><th>Status</th><th className="text-right">Action</th></tr>
+                                <thead>
+                                    <tr className="text-left text-mint-800/50 text-xs uppercase tracking-wider border-b border-mint-100">
+                                        <th className="pb-3 pr-4">Name</th>
+                                        <th className="pb-3 pr-4">Email</th>
+                                        <th className="pb-3 pr-4">Role</th>
+                                        <th className="pb-3 pr-4">2FA</th>
+                                        <th className="pb-3 pr-4">Active</th>
+                                        <th className="pb-3 text-right">Action</th>
+                                    </tr>
                                 </thead>
-                                <tbody className="divide-y divide-mint-100">
-                                    {allDoctors.map((d) => (
-                                        <tr key={d.id} data-testid={`admin-doc-${d.id}`}>
-                                            <td className="py-2 font-medium text-mint-800">{d.name}</td>
-                                            <td className="text-mint-800/70">{d.specialization}</td>
-                                            <td className="text-mint-800/70">{d.hospital?.name || "—"}</td>
-                                            <td>
-                                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${d.is_approved ? "bg-mint-100 text-mint-700" : "bg-red-50 text-red-700"}`}>
-                                                    {d.is_approved ? "Approved" : "Pending"}
+                                <tbody className="divide-y divide-mint-50">
+                                    {users.map(u => (
+                                        <tr key={u.id} data-testid={`admin-user-${u.id}`}>
+                                            <td className="py-3 pr-4 font-medium text-mint-800">{u.full_name}</td>
+                                            <td className="py-3 pr-4 text-mint-800/60 text-xs">{u.email}</td>
+                                            <td className="py-3 pr-4">
+                                                <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize
+                                                    ${u.role === "admin" ? "bg-purple-50 text-purple-700"
+                                                    : u.role === "doctor" ? "bg-mint-100 text-mint-700"
+                                                    : "bg-blue-50 text-blue-700"}`}>
+                                                    {u.role}
                                                 </span>
                                             </td>
-                                            <td className="text-right">
-                                                <button onClick={() => approveDoctor(d.id, !d.is_approved)} className="btn-pill btn-ghost text-xs">
-                                                    {d.is_approved ? "Suspend" : "Approve"}
-                                                </button>
+                                            <td className="py-3 pr-4 text-xs">{u.two_factor_enabled ? "✓" : "—"}</td>
+                                            <td className="py-3 pr-4">
+                                                <span className={`text-xs font-medium ${u.is_active ? "text-mint-600" : "text-red-500"}`}>
+                                                    {u.is_active ? "Active" : "Disabled"}
+                                                </span>
                                             </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </Card>
-                    </div>
-                )}
-
-                {tab === "users" && (
-                    <Card title="All users" extraClass="mt-8">
-                        <table className="w-full text-sm">
-                            <thead className="text-left text-mint-800/60 text-xs uppercase">
-                                <tr><th className="py-2">Name</th><th>Email</th><th>Role</th><th>2FA</th><th>Active</th><th className="text-right">Action</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-mint-100">
-                                {users.map((u) => (
-                                    <tr key={u.id} data-testid={`admin-user-${u.id}`}>
-                                        <td className="py-2 font-medium text-mint-800">{u.full_name}</td>
-                                        <td className="text-mint-800/70">{u.email}</td>
-                                        <td className="capitalize"><span className="rounded-full bg-mint-50 text-mint-700 text-xs px-2 py-0.5">{u.role}</span></td>
-                                        <td>{u.two_factor_enabled ? "✓" : "—"}</td>
-                                        <td>{u.is_active ? "Yes" : "No"}</td>
-                                        <td className="text-right">
-                                            {u.role !== "admin" && (
-                                                <button onClick={() => toggleActive(u.id, !u.is_active)} className="btn-pill btn-ghost text-xs">
-                                                    {u.is_active ? "Disable" : "Enable"}
-                                                </button>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </Card>
-                )}
-
-                {tab === "hospitals" && <HospitalAdmin hospitals={hospitals} reload={load} />}
-
-                {tab === "audit" && (
-                    <Card title="Audit logs" extraClass="mt-8">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                                <thead className="text-left text-mint-800/60 uppercase">
-                                    <tr><th className="py-2">When</th><th>Who</th><th>Action</th><th>Resource</th><th>IP</th></tr>
-                                </thead>
-                                <tbody className="divide-y divide-mint-100">
-                                    {audit.slice(0, 100).map((a) => (
-                                        <tr key={a.id}>
-                                            <td className="py-1.5 text-mint-800/70">{new Date(a.created_at).toLocaleString()}</td>
-                                            <td className="text-mint-800/70">{a.user_id || "anon"}</td>
-                                            <td className="font-medium text-mint-800">{a.action}</td>
-                                            <td className="text-mint-800/70">{a.resource_type}/{(a.resource_id || "—").slice(0, 8)}</td>
-                                            <td className="text-mint-800/60">{a.ip_address}</td>
+                                            <td className="py-3 text-right">
+                                                {u.role !== "admin" && (
+                                                    <button onClick={() => toggleActive(u.id, !u.is_active)}
+                                                        disabled={!!actionLoading[u.id]}
+                                                        className={`text-xs px-3 py-1.5 rounded-full border transition disabled:opacity-50
+                                                            ${u.is_active
+                                                                ? "border-red-200 text-red-600 hover:bg-red-50"
+                                                                : "border-mint-200 text-mint-600 hover:bg-mint-50"}`}>
+                                                        {actionLoading[u.id] ? <RefreshCw size={11} className="inline animate-spin" />
+                                                            : u.is_active ? "Disable" : "Enable"}
+                                                    </button>
+                                                )}
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
-                    </Card>
+                    </div>
+                )}
+
+                {tab === "hospitals" && <HospitalAdmin hospitals={hospitals} reload={load} />}
+
+                {/* AUDIT */}
+                {tab === "audit" && (
+                    <div className="mt-8 glass rounded-2xl p-5 sm:p-6">
+                        <h2 className="editorial text-2xl text-mint-800 mb-4">Audit logs</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="text-left text-mint-800/50 uppercase tracking-wider border-b border-mint-100">
+                                        <th className="pb-3 pr-4">When</th>
+                                        <th className="pb-3 pr-4">Who</th>
+                                        <th className="pb-3 pr-4">Action</th>
+                                        <th className="pb-3 pr-4">Resource</th>
+                                        <th className="pb-3">IP</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-mint-50">
+                                    {audit.slice(0, 100).map(a => (
+                                        <tr key={a.id}>
+                                            <td className="py-2 pr-4 text-mint-800/60 whitespace-nowrap">{new Date(a.created_at).toLocaleString()}</td>
+                                            <td className="py-2 pr-4 text-mint-800/50 font-mono">{(a.user_id || "anon").slice(0, 8)}…</td>
+                                            <td className="py-2 pr-4 font-semibold text-mint-800">{a.action}</td>
+                                            <td className="py-2 pr-4 text-mint-800/60">{a.resource_type}/{(a.resource_id || "—").slice(0, 8)}</td>
+                                            <td className="py-2 text-mint-800/50">{a.ip_address}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 )}
             </section>
         </div>
     );
 }
 
-function Stat({ icon: Icon, label, value, sub }) {
+function StatCard({ icon: Icon, label, value, sub, color }) {
     return (
-        <div className="glass-mint rounded-2xl p-6" data-testid={`stat-${label.toLowerCase()}`}>
-            <div className="flex items-center gap-2">
-                <div className="grid h-9 w-9 place-items-center rounded-xl bg-mint-500 text-white"><Icon size={16} /></div>
-                <p className="overline">{label}</p>
+        <div className="glass-mint rounded-2xl p-4 sm:p-5" data-testid={`stat-${label.toLowerCase()}`}>
+            <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-mint-600/10 flex items-center justify-center">
+                    <Icon size={15} className="text-mint-600" />
+                </div>
+                <p className="overline text-[10px]">{label}</p>
             </div>
-            <p className="editorial mt-3 text-4xl text-mint-800">{value}</p>
-            {sub && <p className="mt-1 text-xs text-mint-800/60">{sub}</p>}
-        </div>
-    );
-}
-
-function Card({ title, children, extraClass = "" }) {
-    return (
-        <div className={`glass rounded-2xl p-6 ${extraClass}`}>
-            <h2 className="editorial text-2xl text-mint-800">{title}</h2>
-            <div className="mt-4 overflow-x-auto">{children}</div>
+            <p className="editorial text-3xl sm:text-4xl text-mint-800">{value}</p>
+            {sub && <p className="mt-1 text-xs text-mint-800/50">{sub}</p>}
         </div>
     );
 }
@@ -208,120 +391,96 @@ function HospitalAdmin({ hospitals, reload }) {
     const [showAdd, setShowAdd] = useState(false);
     const [form, setForm] = useState({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
     const [error, setError] = useState("");
+    const [saving, setSaving] = useState(false);
 
     const create = async () => {
+        setSaving(true);
         try {
             await api.post("/admin/hospitals", form);
-            setShowAdd(false); setForm({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
+            setShowAdd(false);
+            setForm({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
             reload();
-        } catch (e) {
-            setError(formatApiError(e.response?.data?.detail));
-        }
+        } catch (e) { setError(formatApiError(e.response?.data?.detail)); }
+        finally { setSaving(false); }
     };
+
     const remove = async (id) => {
-        if (!window.confirm("Delete this hospital?")) return;
+        if (!window.confirm("Delete this hospital? This cannot be undone.")) return;
         await api.delete(`/admin/hospitals/${id}`);
         reload();
     };
-    const toggleSpec = (s) => {
-        setForm((f) => ({ ...f, specialties_available: f.specialties_available.includes(s) ? f.specialties_available.filter((x) => x !== s) : [...f.specialties_available, s] }));
-    };
+
+    const toggleSpec = s => setForm(f => ({
+        ...f, specialties_available: f.specialties_available.includes(s)
+            ? f.specialties_available.filter(x => x !== s)
+            : [...f.specialties_available, s]
+    }));
 
     return (
-        <Card title="Hospitals" extraClass="mt-8">
-            <div className="flex items-center justify-between">
-                <p className="text-sm text-mint-800/70">Manage the hospitals available on Sukhya Med.</p>
-                <button onClick={() => setShowAdd((v) => !v)} className="btn-pill btn-primary text-sm" data-testid="add-hospital"><Plus size={14} /> {showAdd ? "Close" : "New hospital"}</button>
-            </div>
-            {showAdd && (
-                <div className="mt-4 rounded-2xl bg-white/60 border border-mint-100 p-4 grid sm:grid-cols-2 gap-3" data-testid="hospital-form">
-                    <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="Address" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="sm:col-span-2 rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="Area" value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="City" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="State" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="Pin code" value={form.pin_code} onChange={(e) => setForm({ ...form, pin_code: e.target.value })} className="rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <input placeholder="Image URL" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="sm:col-span-2 rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <textarea placeholder="Description" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="sm:col-span-2 rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm" />
-                    <div className="sm:col-span-2">
-                        <p className="text-xs text-mint-800/70 mb-1">Specialties</p>
-                        <div className="flex flex-wrap gap-1.5">
-                            {SPECIALTIES.map((s) => (
-                                <button key={s} type="button" onClick={() => toggleSpec(s)} className={`rounded-full px-2.5 py-1 text-xs border ${form.specialties_available.includes(s) ? "bg-mint-500 text-white border-mint-500" : "bg-white/80 border-mint-100"}`}>
-                                    {s}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {error && <p className="text-red-600 text-xs sm:col-span-2">{error}</p>}
-                    <button onClick={create} className="btn-pill btn-primary text-sm sm:col-span-2" data-testid="submit-hospital">Create hospital</button>
+        <div className="mt-8 space-y-4">
+            <div className="glass rounded-2xl p-5 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="editorial text-2xl text-mint-800">Hospitals</h2>
+                    <button onClick={() => setShowAdd(v => !v)} className="btn-pill btn-primary text-sm" data-testid="add-hospital">
+                        <Plus size={14} /> {showAdd ? "Cancel" : "New hospital"}
+                    </button>
                 </div>
-            )}
-            <table className="mt-4 w-full text-sm">
-                <thead className="text-left text-mint-800/60 text-xs uppercase">
-                    <tr><th className="py-2">Name</th><th>Area</th><th>City</th><th>Pin</th><th>Doctors</th><th className="text-right">Action</th></tr>
-                </thead>
-                <tbody className="divide-y divide-mint-100">
-                    {hospitals.map((h) => (
-                        <tr key={h.id} data-testid={`admin-hosp-${h.id}`}>
-                            <td className="py-2 font-medium text-mint-800">{h.name}</td>
-                            <td className="text-mint-800/70">{h.area}</td>
-                            <td className="text-mint-800/70">{h.city}</td>
-                            <td className="text-mint-800/70">{h.pin_code}</td>
-                            <td className="text-mint-800/70">{h.doctor_count}</td>
-                            <td className="text-right">
-                                <button onClick={() => remove(h.id)} className="btn-pill btn-ghost text-xs text-red-600"><Trash2 size={12} /> Remove</button>
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </Card>
-    );
-}
 
-function InviteDoctorCard({ hospitals, onInvited }) {
-    const [email, setEmail] = useState("");
-    const [hospitalId, setHospitalId] = useState("");
-    const [busy, setBusy] = useState(false);
-    const [result, setResult] = useState(null);
+                {showAdd && (
+                    <div className="mb-6 rounded-2xl bg-white/60 border border-mint-100 p-5 grid sm:grid-cols-2 gap-3" data-testid="hospital-form">
+                        <p className="sm:col-span-2 text-xs font-semibold text-mint-600 uppercase tracking-wider">New hospital details</p>
+                        {[["name","Name *"],["phone","Phone"],["address","Address"],["area","Area *"],["city","City *"],["state","State"],["pin_code","Pin code"],["image_url","Image URL"]].map(([k,p]) => (
+                            <input key={k} placeholder={p} value={form[k]} onChange={e => setForm({...form,[k]:e.target.value})}
+                                className={`rounded-xl border border-mint-100 bg-white/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 ${k==="address"||k==="image_url"?"sm:col-span-2":""}`} />
+                        ))}
+                        <textarea placeholder="Description" rows={2} value={form.description} onChange={e => setForm({...form,description:e.target.value})}
+                            className="sm:col-span-2 rounded-xl border border-mint-100 bg-white/80 px-3 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500" />
+                        <div className="sm:col-span-2">
+                            <p className="text-xs font-medium text-mint-800/60 mb-2">Specialties available</p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {SPECIALTIES.map(s => (
+                                    <button key={s} type="button" onClick={() => toggleSpec(s)}
+                                        className={`rounded-full px-2.5 py-1 text-xs border transition ${form.specialties_available.includes(s) ? "bg-mint-600 text-white border-mint-600" : "bg-white/80 border-mint-100 text-mint-800 hover:border-mint-400"}`}>
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {error && <p className="text-red-600 text-xs sm:col-span-2">{error}</p>}
+                        <button onClick={create} disabled={saving} className="btn-pill btn-primary text-sm sm:col-span-2 justify-center disabled:opacity-50" data-testid="submit-hospital">
+                            {saving ? "Creating…" : "Create hospital"}
+                        </button>
+                    </div>
+                )}
 
-    const invite = async () => {
-        if (!email || !hospitalId) return;
-        setBusy(true); setResult(null);
-        try {
-            const { data } = await api.post("/admin/invite-doctor", { email, hospital_id: hospitalId });
-            setResult({ success: true, email: data.email });
-            setEmail(""); setHospitalId("");
-            onInvited();
-        } catch (e) {
-            setResult({ success: false, error: e.response?.data?.detail || "Failed to invite doctor." });
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    return (
-        <div className="glass-mint rounded-2xl p-5">
-            <h3 className="editorial text-2xl text-mint-800 mb-1">Invite a doctor</h3>
-            <p className="text-sm text-mint-800/60 mb-4">Enter the doctor's email and select their hospital. They'll receive an invite with a temporary password.</p>
-            <div className="flex flex-wrap gap-2">
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                    placeholder="doctor@email.com"
-                    className="rounded-xl border border-mint-100 bg-white/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 flex-1 min-w-48" />
-                <select value={hospitalId} onChange={e => setHospitalId(e.target.value)}
-                    className="rounded-xl border border-mint-100 bg-white/80 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500">
-                    <option value="">— Select hospital —</option>
-                    {hospitals.map(h => <option key={h.id} value={h.id}>{h.name} · {h.area}</option>)}
-                </select>
-                <button onClick={invite} disabled={busy || !email || !hospitalId}
-                    className="btn-pill btn-primary text-sm disabled:opacity-50">
-                    {busy ? "Sending…" : <><Plus size={14} /> Send invite</>}
-                </button>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="text-left text-mint-800/50 text-xs uppercase tracking-wider border-b border-mint-100">
+                                <th className="pb-3 pr-4">Name</th><th className="pb-3 pr-4">Area</th>
+                                <th className="pb-3 pr-4">City</th><th className="pb-3 pr-4">Pin</th>
+                                <th className="pb-3 pr-4">Doctors</th><th className="pb-3 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-mint-50">
+                            {hospitals.map(h => (
+                                <tr key={h.id} data-testid={`admin-hosp-${h.id}`}>
+                                    <td className="py-3 pr-4 font-medium text-mint-800">{h.name}</td>
+                                    <td className="py-3 pr-4 text-mint-800/60 text-xs">{h.area}</td>
+                                    <td className="py-3 pr-4 text-mint-800/60 text-xs">{h.city}</td>
+                                    <td className="py-3 pr-4 text-mint-800/60 text-xs">{h.pin_code}</td>
+                                    <td className="py-3 pr-4 text-mint-800/60 text-xs">{h.doctor_count}</td>
+                                    <td className="py-3 text-right">
+                                        <button onClick={() => remove(h.id)} className="text-xs px-3 py-1.5 rounded-full border border-red-200 text-red-600 hover:bg-red-50 transition">
+                                            <Trash2 size={11} className="inline mr-1" />Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            {result?.success && <p className="mt-2 text-sm text-mint-600">✓ Invite sent to {result.email}</p>}
-            {result?.error && <p className="mt-2 text-sm text-red-600">{result.error}</p>}
         </div>
     );
 }
