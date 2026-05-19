@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import api, { formatApiError } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -114,6 +114,7 @@ function ProfileSetup({ profile, onComplete }) {
                 license_number: form.license_number,
                 profile_photo_url: form.profile_photo_url,
                 bio: form.bio,
+                profile_setup_complete: true,
             });
             onComplete();
         } catch (e) { setError(formatApiError(e.response?.data?.detail)); }
@@ -445,10 +446,11 @@ export default function DoctorDashboard() {
     const [presForm, setPresForm] = useState({ diagnosis: "", medications: [{ name: "", dosage: "", frequency: "", duration: "" }], additional_notes: "" });
 
     // Detect if navigated to /doctor/profile via navbar
+    const location = useLocation();
     useEffect(() => {
-        if (window.location.pathname === "/doctor/profile") setView("profile");
+        if (location.pathname === "/doctor/profile") setView("profile");
         else setView("dashboard");
-    }, [window.location.pathname]);
+    }, [location.pathname]);
 
     const load = async () => {
         try {
@@ -498,8 +500,8 @@ export default function DoctorDashboard() {
         </div>
     );
 
-    // Show setup if profile incomplete
-    const isProfileIncomplete = !profile.bio || !profile.profile_photo_url;
+    // Show setup only if doctor has never completed setup before
+    const isProfileIncomplete = !profile.profile_setup_complete;
     if (isProfileIncomplete && !setupDone) {
         return <ProfileSetup profile={profile} onComplete={() => { setSetupDone(true); load(); }} />;
     }
