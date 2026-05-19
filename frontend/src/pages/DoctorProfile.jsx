@@ -117,14 +117,14 @@ export default function DoctorProfile() {
     return (
         <div className="min-h-screen">
             <Navbar />
-            <section className="mx-auto max-w-6xl px-6 pt-10 pb-20">
-                <Link to="/find-doctors" className="text-sm text-mint-600 hover:underline" data-testid="doctor-back">← Back</Link>
+            <section className="mx-auto max-w-6xl px-4 sm:px-6 pt-6 sm:pt-10 pb-20">
+                <Link to="/find-doctors" className="inline-block text-sm text-mint-600 hover:underline mb-1" data-testid="doctor-back">← Back</Link>
 
-                <div className="mt-6 grid lg:grid-cols-3 gap-8">
+                <div className="mt-4 sm:mt-6 grid lg:grid-cols-3 gap-4 sm:gap-8">
                     {/* Doctor Info Card */}
-                    <div className="lg:col-span-1 glass-mint rounded-3xl p-6">
-                        <img src={doctor.profile_photo_url} alt={doctor.name} className="w-full h-64 object-cover rounded-2xl" />
-                        <h1 className="editorial mt-5 text-3xl text-mint-800">{doctor.name}</h1>
+                    <div className="lg:col-span-1 glass-mint rounded-2xl sm:rounded-3xl p-4 sm:p-6">
+                        <img src={doctor.profile_photo_url} alt={doctor.name} className="w-full h-48 sm:h-64 object-cover rounded-xl sm:rounded-2xl" />
+                        <h1 className="editorial mt-4 sm:mt-5 text-2xl sm:text-3xl text-mint-800">{doctor.name}</h1>
                         <p className="text-sm text-mint-600 font-medium">{doctor.specialization}</p>
                         <div className="mt-4 space-y-2 text-sm text-mint-800/80">
                             <p className="flex items-center gap-2"><Star size={14} fill="#1F8A4D" stroke="#1F8A4D" /> {doctor.rating} · {doctor.reviews_count} reviews</p>
@@ -139,20 +139,20 @@ export default function DoctorProfile() {
                     </div>
 
                     {/* Booking Card */}
-                    <div className="lg:col-span-2 glass rounded-3xl p-6">
+                    <div className="lg:col-span-2 glass rounded-2xl sm:rounded-3xl p-4 sm:p-6">
                         <span className="overline">About</span>
                         <p className="mt-2 text-mint-800/80 leading-relaxed">{doctor.bio}</p>
 
                         <div className="mt-8 flex items-center gap-2">
                             <CalendarCheck size={18} className="text-mint-600" />
-                            <h2 className="editorial text-2xl text-mint-800">Pick a date & slot</h2>
+                            <h2 className="editorial text-xl sm:text-2xl text-mint-800">Pick a date & slot</h2>
                         </div>
 
                         {/* Date strip */}
                         <div className="mt-4 flex gap-2 overflow-x-auto pb-2" data-testid="date-strip">
                             {days.map((d) => (
                                 <button key={d.iso} onClick={() => setDate(d.iso)}
-                                    className={`min-w-[110px] rounded-2xl px-4 py-3 text-sm transition border ${date === d.iso ? "bg-mint-600 text-white border-mint-600" : "bg-white/70 text-mint-800 border-mint-100 hover:border-mint-600"}`}
+                                    className={`min-w-[88px] sm:min-w-[110px] rounded-xl sm:rounded-2xl px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm transition border ${date === d.iso ? "bg-mint-600 text-white border-mint-600" : "bg-white/70 text-mint-800 border-mint-100 hover:border-mint-600"}`}
                                     data-testid={`date-${d.iso}`}>
                                     {d.label}
                                 </button>
@@ -203,7 +203,7 @@ export default function DoctorProfile() {
 
                         {inCooldown ? (
                             <div className="mt-6 glass-mint rounded-2xl border border-mint-200 overflow-hidden" data-testid="booking-limit-banner">
-                                <div className="px-5 py-4 flex items-center gap-4">
+                                <div className="px-4 sm:px-5 py-3 sm:py-4 flex items-start sm:items-center gap-3 sm:gap-4">
                                     <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-mint-600/10 flex items-center justify-center">
                                         <Clock size={18} className="text-mint-600" />
                                     </div>
@@ -222,7 +222,7 @@ export default function DoctorProfile() {
                                         </p>
                                     </div>
                                     <Link to="/patient/dashboard"
-                                        className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full bg-mint-600 text-white font-medium hover:bg-mint-700 transition">
+                                        className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full bg-mint-600 text-white font-medium hover:bg-mint-700 transition self-start sm:self-auto">
                                         View booking
                                     </Link>
                                 </div>
