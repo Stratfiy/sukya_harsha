@@ -1068,6 +1068,39 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             appt["google_calendar_event_id"] = ev_id
 
     await write_audit(user["id"], "appointment_booked", "appointment", appt_id, request, {"doctor_id": req.doctor_id, "date": req.date})
+
+    # Send booking confirmation email
+    if RESEND_API_KEY and not RESEND_API_KEY.startswith("re_REPLACE"):
+        try:
+            resend.Emails.send({
+                "from": RESEND_FROM,
+                "to": [user["email"]],
+                "subject": f"Appointment confirmed — {doctor['name']} on {req.date}",
+                "html": f"""
+                <div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px;background:#fff;color:#0a2518">
+                  <div style="border-bottom:3px solid #1F8A4D;padding-bottom:16px;margin-bottom:24px">
+                    <span style="font-size:24px">Sukhya <span style="color:#1F8A4D;font-style:italic">Med</span></span>
+                  </div>
+                  <h2 style="font-weight:400;font-size:22px;margin-bottom:8px">Your appointment is confirmed ✓</h2>
+                  <p style="color:#4A6E59;font-size:14px;margin-bottom:24px">Hi {user.get('full_name','there')}, here are your appointment details:</p>
+                  <table style="width:100%;border-collapse:collapse;background:#EEFBF3;border-radius:8px;overflow:hidden">
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59;width:40%">Doctor</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{doctor['name']}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Specialization</td><td style="padding:10px 16px;font-size:13px">{doctor['specialization']}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Date</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{req.date}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Time</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{req.time_slot}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Type</td><td style="padding:10px 16px;font-size:13px">In-person</td></tr>
+                  </table>
+                  <p style="color:#4A6E59;font-size:12px;margin-top:24px">Please arrive 10 minutes early. This appointment cannot be cancelled once booked.</p>
+                  <p style="color:#4A6E59;font-size:12px;margin-top:8px">View your dashboard: <a href="https://www.sukhya.com/patient/dashboard" style="color:#1F8A4D">sukhya.com/patient/dashboard</a></p>
+                  <div style="border-top:1px solid #D4F5E2;margin-top:32px;padding-top:16px;font-size:11px;color:#999">
+                    © {datetime.now().year} Sukhya Med · sukhya.com
+                  </div>
+                </div>
+                """,
+            })
+        except Exception as e:
+            logger.warning("Booking confirmation email failed: %s", e)
+
     appt.pop("_id", None)
     return appt
 
