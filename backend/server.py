@@ -998,15 +998,16 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
         if slot_minutes <= now_minutes:
             raise HTTPException(status_code=400, detail="This slot has already passed. Please pick a future slot.")
 
-    # 6. One active booking at a time across ALL doctors
+    # 6. One active booking per day (24-hour window rule)
     active_booking = await db.appointments.find_one({
         "patient_id": user["id"],
+        "date": req.date,
         "status": "booked"
     })
     if active_booking:
         raise HTTPException(
             status_code=400,
-            detail=f"You already have an active appointment with {active_booking['doctor_name']} on {active_booking['date']} at {active_booking['time_slot']}. Complete or attend it before booking another."
+            detail=f"You have already booked a slot for {req.date} with {active_booking['doctor_name']} at {active_booking['time_slot']}. You cannot book another appointment on the same day."
         )
 
     # 7. Validate slot is available for that day
@@ -1412,6 +1413,13 @@ async def on_startup():
     await db.appointments.create_index("patient_id")
     await db.appointments.create_index("doctor_id")
     await db.appointments.create_index([("doctor_id", 1), ("date", 1), ("time_slot", 1)])
+    # Prevent race-condition duplicates: one booked slot per patient per day
+    await db.appointments.create_index(
+        [("patient_id", 1), ("date", 1)],
+        name="unique_patient_day_booking",
+        partialFilterExpression={"status": "booked"},
+        unique=True
+    )
     await db.prescriptions.create_index("patient_id")
     await db.prescriptions.create_index("doctor_id")
     await db.audit_logs.create_index([("created_at", -1)])
