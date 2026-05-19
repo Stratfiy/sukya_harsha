@@ -36,8 +36,15 @@ export default function Navbar() {
         { to: "/patient/dashboard", label: "Dashboard" },
     ];
 
+    const doctorItems = [
+        { to: "/", label: "Home", end: true },
+        { to: "/about", label: "About" },
+        { to: "/find-doctors", label: "Find Doctors" },
+        { to: "/doctor/dashboard", label: "Dashboard" },
+    ];
+
     const navItems = user?.role === "patient" ? patientItems
-        : user?.role === "doctor" ? []
+        : user?.role === "doctor" ? doctorItems
         : user?.role === "admin" ? []
         : publicItems;
 
@@ -60,10 +67,6 @@ export default function Navbar() {
                             {item.label}
                         </NavLink>
                     ))}
-                    {/* Doctor & admin get no nav links - handled inside their dashboards */}
-                    {(user?.role === "doctor") && (
-                        <NavLink to="/doctor/dashboard" className={navLink}>Dashboard</NavLink>
-                    )}
                     {(user?.role === "admin") && (
                         <NavLink to="/admin/dashboard" className={navLink}>Admin</NavLink>
                     )}
@@ -132,12 +135,6 @@ export default function Navbar() {
                             {item.label}
                         </NavLink>
                     ))}
-                    {user?.role === "doctor" && (
-                        <NavLink to="/doctor/dashboard" onClick={() => setMobileOpen(false)}
-                            className={({ isActive }) => `block px-4 py-3 rounded-xl text-sm transition ${isActive ? "bg-mint-600 text-white" : "text-mint-800/70 hover:bg-mint-50"}`}>
-                            Dashboard
-                        </NavLink>
-                    )}
                     {user?.role === "admin" && (
                         <NavLink to="/admin/dashboard" onClick={() => setMobileOpen(false)}
                             className={({ isActive }) => `block px-4 py-3 rounded-xl text-sm transition ${isActive ? "bg-mint-600 text-white" : "text-mint-800/70 hover:bg-mint-50"}`}>
