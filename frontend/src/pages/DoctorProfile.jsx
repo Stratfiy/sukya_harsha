@@ -52,10 +52,17 @@ export default function DoctorProfile() {
         });
     }, [id, date]);
 
-    // Only block the exact selected date — other dates are freely bookable
-    const hasBookingOnDate = existingAppts.some(
-        (a) => a.status === "booked" && a.date && a.date.slice(0, 10) === date
-    );
+    // 24-hour cooldown: find the most recent booked appointment
+    const lastBooking = existingAppts
+        .filter(a => a.status === "booked" && a.created_at)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+    const cooldownMs = lastBooking ? 24 * 60 * 60 * 1000 - (Date.now() - new Date(lastBooking.created_at).getTime()) : -1;
+    const inCooldown = cooldownMs > 0;
+
+    const canBookAt = lastBooking ? new Date(new Date(lastBooking.created_at).getTime() + 24 * 60 * 60 * 1000) : null;
+    const cooldownHours = cooldownMs > 0 ? Math.floor(cooldownMs / 3600000) : 0;
+    const cooldownMins = cooldownMs > 0 ? Math.floor((cooldownMs % 3600000) / 60000) : 0;
 
     const book = async () => {
         setError("");
@@ -66,8 +73,11 @@ export default function DoctorProfile() {
         // Hard guard: re-check live appointments before submitting
         const freshAppts = await api.get("/appointments").then(r => r.data).catch(() => existingAppts);
         setExistingAppts(freshAppts);
-        const alreadyBooked = freshAppts.some(a => a.status === "booked" && a.date && a.date.slice(0, 10) === date);
-        if (alreadyBooked) return; // banner will show automatically
+        const lastFresh = freshAppts
+            .filter(a => a.status === "booked" && a.created_at)
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+        const stillInCooldown = lastFresh && (Date.now() - new Date(lastFresh.created_at).getTime()) < 24 * 60 * 60 * 1000;
+        if (stillInCooldown) return; // banner will show automatically
 
         setBooking(true);
         try {
@@ -191,20 +201,37 @@ export default function DoctorProfile() {
                             </div>
                         )}
 
-                        {hasBookingOnDate ? (
-                            <div className="mt-6 glass-mint rounded-2xl px-5 py-4 flex items-center gap-4 border border-mint-200" data-testid="booking-limit-banner">
-                                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-mint-600/10 flex items-center justify-center">
-                                    <Calendar size={18} className="text-mint-600" />
+                        {inCooldown ? (
+                            <div className="mt-6 glass-mint rounded-2xl border border-mint-200 overflow-hidden" data-testid="booking-limit-banner">
+                                <div className="px-5 py-4 flex items-center gap-4">
+                                    <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-mint-600/10 flex items-center justify-center">
+                                        <Clock size={18} className="text-mint-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-mint-800">You have an active booking</p>
+                                        <p className="text-xs text-mint-800/60 mt-0.5">
+                                            Next booking opens in{" "}
+                                            <span className="text-mint-600 font-semibold">
+                                                {cooldownHours > 0 ? `${cooldownHours}h ${cooldownMins}m` : `${cooldownMins}m`}
+                                            </span>
+                                            {canBookAt && (
+                                                <> · available from <span className="font-medium text-mint-700">
+                                                    {canBookAt.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                                </span></>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <Link to="/patient/dashboard"
+                                        className="flex-shrink-0 text-xs px-3 py-1.5 rounded-full bg-mint-600 text-white font-medium hover:bg-mint-700 transition">
+                                        View booking
+                                    </Link>
                                 </div>
-                                <div className="flex-1">
-                                    <p className="text-sm font-semibold text-mint-800">Slot already booked for this day</p>
-                                    <p className="text-xs text-mint-800/60 mt-0.5">
-                                        You can only book one appointment per day. Choose another date above, or{" "}
-                                        <Link to="/patient/dashboard" className="text-mint-600 font-medium underline">view your booking</Link>.
-                                    </p>
-                                </div>
-                                <div className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-mint-600/10 text-mint-600 text-xs font-medium">
-                                    <Clock size={11} /> 1 per day
+                                {/* cooldown progress bar */}
+                                <div className="h-1 bg-mint-100">
+                                    <div
+                                        className="h-1 bg-mint-500 transition-all"
+                                        style={{ width: `${Math.max(0, 100 - (cooldownMs / (24*3600*1000)) * 100)}%` }}
+                                    />
                                 </div>
                             </div>
                         ) : (
