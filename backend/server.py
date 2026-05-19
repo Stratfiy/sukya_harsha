@@ -401,6 +401,16 @@ class DoctorApprovalAction(BaseModel):
     reason: Optional[str] = None
 
 
+class InviteDoctorRequest(BaseModel):
+    email: str
+    full_name: str
+    hospital_id: str
+    specialization: str
+    license_number: str = ""
+    years_of_experience: int = 1
+    consultation_fee: int = 1000
+
+
 # ---------------- AUTH ----------------
 @api.post("/auth/register")
 @limiter.limit("5/minute")
@@ -1263,6 +1273,174 @@ async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: R
         raise HTTPException(status_code=404, detail="Doctor not found")
     await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
     return {"approved": False}
+
+
+@api.post("/admin/invite-doctor")
+async def admin_invite_doctor(
+    req: InviteDoctorRequest,
+    request: Request,
+    user: dict = Depends(require_role("admin")),
+    _csrf=Depends(verify_csrf)
+):
+    """Invite a doctor by email. Creates account + sends credentials email."""
+    email = req.email.lower().strip()
+
+    # Check not already registered
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"An account with {email} already exists.")
+
+    # Check hospital exists
+    hospital = await db.hospitals.find_one({"id": req.hospital_id})
+    if not hospital:
+        raise HTTPException(status_code=400, detail="Invalid hospital_id")
+
+    # Generate secure temp password
+    temp_password = "Dr" + secrets.token_urlsafe(10) + "!"
+    user_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Create user account
+    await db.users.insert_one({
+        "id": user_id, "email": email,
+        "password_hash": hash_password(temp_password),
+        "full_name": req.full_name, "phone": "", "role": "doctor",
+        "google_id": None, "avatar_url": "",
+        "is_active": True, "is_verified": True,
+        "failed_login_attempts": 0, "locked_until": None,
+        "two_factor_secret": None, "two_factor_enabled": False,
+        "consent_given_at": now, "created_at": now, "updated_at": now,
+    })
+
+    # Create doctor profile
+    await db.doctors.insert_one({
+        "id": user_id, "user_id": user_id,
+        "hospital_id": req.hospital_id,
+        "name": req.full_name, "email": email,
+        "specialization": req.specialization,
+        "years_of_experience": req.years_of_experience,
+        "license_number": req.license_number,
+        "bio": "", "profile_photo_url": "",
+        "consultation_fee": req.consultation_fee,
+        "is_approved": False,
+        "approved_by": None, "approved_at": None,
+        "online_consultation_enabled": False,
+        "availability": [], "blocked_dates": [],
+        "today_mode": "both",
+        "google_calendar_connected": False,
+        "google_calendar_token": None,
+        "profile_setup_complete": False,
+        "rating": 5.0, "reviews_count": 0,
+        "created_at": now, "updated_at": now,
+    })
+
+    # Send invite email with credentials
+    login_url = f"{FRONTEND_URL}/login"
+    email_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"/></head>
+    <body style="margin:0;padding:0;background:#f5faf7;font-family:'Outfit',system-ui,sans-serif;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5faf7;padding:40px 20px;">
+        <tr><td align="center">
+          <table width="580" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(31,138,77,0.08);">
+            <!-- Header -->
+            <tr>
+              <td style="background:linear-gradient(135deg,#1F8A4D,#2ECC71);padding:32px 40px;">
+                <h1 style="margin:0;font-family:'Georgia',serif;color:#ffffff;font-size:28px;font-weight:400;">
+                  Sukhya <em style="color:#a7f3c7;">Med</em>
+                </h1>
+                <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">The future of digital healthcare</p>
+              </td>
+            </tr>
+            <!-- Body -->
+            <tr>
+              <td style="padding:40px;">
+                <h2 style="margin:0 0 8px;font-family:'Georgia',serif;font-weight:400;color:#0a2518;font-size:26px;">
+                  You have been invited to<br/>Sukhya Med
+                </h2>
+                <p style="margin:0 0 28px;color:#4A6E59;font-size:14px;line-height:1.6;">
+                  You have been added as a doctor at <strong style="color:#0a2518;">{hospital["name"]}.</strong><br/>
+                  Use the credentials below to sign in and complete your profile.
+                </p>
+
+                <!-- Credentials card -->
+                <table width="100%" cellpadding="0" cellspacing="0" style="background:#EEFBF3;border-radius:14px;border:1px solid #D4F5E2;margin-bottom:28px;">
+                  <tr><td style="padding:24px 28px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding:8px 0;color:#4A6E59;font-size:13px;width:160px;">Email</td>
+                        <td style="padding:8px 0;"><a href="mailto:{email}" style="color:#1F8A4D;font-weight:600;text-decoration:none;">{email}</a></td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;color:#4A6E59;font-size:13px;border-top:1px solid #D4F5E2;">Temporary Password</td>
+                        <td style="padding:8px 0;border-top:1px solid #D4F5E2;"><strong style="color:#0a2518;font-size:15px;letter-spacing:0.5px;">{temp_password}</strong></td>
+                      </tr>
+                      <tr>
+                        <td style="padding:8px 0;color:#4A6E59;font-size:13px;border-top:1px solid #D4F5E2;">Hospital</td>
+                        <td style="padding:8px 0;border-top:1px solid #D4F5E2;color:#0a2518;font-weight:500;">{hospital["name"]}</td>
+                      </tr>
+                    </table>
+                  </td></tr>
+                </table>
+
+                <!-- CTA -->
+                <table cellpadding="0" cellspacing="0">
+                  <tr><td style="background:#1F8A4D;border-radius:50px;box-shadow:0 8px 20px rgba(31,138,77,0.3);">
+                    <a href="{login_url}" style="display:inline-block;padding:14px 32px;color:#ffffff;text-decoration:none;font-weight:600;font-size:14px;">
+                      Complete your profile →
+                    </a>
+                  </td></tr>
+                </table>
+
+                <p style="margin:28px 0 0;color:#9BB4A4;font-size:12px;line-height:1.6;">
+                  Please change your password after your first login.<br/>
+                  If you were not expecting this invitation, you can ignore this email.
+                </p>
+              </td>
+            </tr>
+            <!-- Footer -->
+            <tr>
+              <td style="padding:20px 40px;border-top:1px solid #EEFBF3;">
+                <p style="margin:0;color:#9BB4A4;font-size:11px;">
+                  © {datetime.now().year} Sukhya Med · Navi Mumbai, India · 
+                  <a href="{FRONTEND_URL}" style="color:#1F8A4D;text-decoration:none;">sukhya.com</a>
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    sent = False
+    if RESEND_API_KEY and not RESEND_API_KEY.startswith("re_REPLACE"):
+        try:
+            resend.Emails.send({
+                "from": RESEND_FROM,
+                "to": [email],
+                "subject": f"You have been invited to join {hospital['name']} on Sukhya Med",
+                "html": email_html,
+            })
+            sent = True
+        except Exception as e:
+            logger.warning("Invite email failed: %s", e)
+
+    if not sent:
+        logger.info(f"[InviteDoctor] {email} temp_password={temp_password}")
+
+    await write_audit(user["id"], "doctor_invited", "user", user_id, request,
+                      {"email": email, "hospital": hospital["name"], "email_sent": sent})
+
+    return {
+        "id": user_id,
+        "email": email,
+        "hospital": hospital["name"],
+        "temp_password": temp_password,
+        "email_sent": sent,
+    }
 
 
 @api.post("/admin/hospitals")
