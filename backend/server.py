@@ -349,6 +349,7 @@ class AvailabilityEntry(BaseModel):
 class DoctorProfileUpdate(BaseModel):
     name: Optional[str] = None
     bio: Optional[str] = None
+    profile_setup_complete: Optional[bool] = None
     specialization: Optional[str] = None
     years_of_experience: Optional[int] = None
     license_number: Optional[str] = None
