@@ -33,12 +33,16 @@ export default function DoctorProfile() {
     const [error, setError] = useState("");
     const [success, setSuccess] = useState(null);
     const [booking, setBooking] = useState(false);
+    const [existingAppts, setExistingAppts] = useState([]);
 
     const days = useMemo(() => nextDays(7), []);
 
     useEffect(() => {
         api.get(`/doctors/${id}`).then((r) => setDoctor(r.data)).catch((e) => setError(formatApiError(e.response?.data?.detail)));
-    }, [id]);
+        if (user) {
+            api.get("/appointments").then((r) => setExistingAppts(r.data)).catch(() => {});
+        }
+    }, [id, user]);
 
     useEffect(() => {
         if (!id || !date) return;
@@ -47,6 +51,10 @@ export default function DoctorProfile() {
             setSelectedSlot(null);
         });
     }, [id, date]);
+
+    const hasBookingOnDate = existingAppts.some(
+        (a) => a.date === date && a.status === "booked"
+    );
 
     const book = async () => {
         setError("");
@@ -170,11 +178,21 @@ export default function DoctorProfile() {
                             </div>
                         )}
 
-                        <button onClick={book} disabled={booking || !selectedSlot}
-                            className="mt-6 btn-pill btn-primary disabled:opacity-50"
-                            data-testid="book-btn">
-                            {booking ? "Booking…" : <>Book in-person consultation <ArrowRight size={18} /></>}
-                        </button>
+                        {hasBookingOnDate ? (
+                            <div className="mt-6 rounded-2xl bg-amber-50 border border-amber-200 px-5 py-4 flex items-start gap-3" data-testid="booking-limit-banner">
+                                <span className="text-amber-500 text-lg mt-0.5">⏳</span>
+                                <div>
+                                    <p className="text-sm font-semibold text-amber-800">You already have a slot booked for this day.</p>
+                                    <p className="text-xs text-amber-700 mt-0.5">You can only book one appointment per day. Please pick a different date or visit your <Link to="/patient/dashboard" className="underline font-medium">dashboard</Link> to view your booking.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <button onClick={book} disabled={booking || !selectedSlot}
+                                className="mt-6 btn-pill btn-primary disabled:opacity-50"
+                                data-testid="book-btn">
+                                {booking ? "Booking…" : <>Book in-person consultation <ArrowRight size={18} /></>}
+                            </button>
+                        )}
                     </div>
                 </div>
             </section>
