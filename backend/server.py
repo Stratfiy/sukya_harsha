@@ -957,86 +957,60 @@ async def _push_to_doctor_calendar(doctor: dict, appt: dict):
 @api.post("/appointments")
 @limiter.limit("10/minute")
 async def book_appointment(req: AppointmentCreate, request: Request, user: dict = Depends(require_role("patient")), _csrf=Depends(verify_csrf)):
-    # 1. Check doctor exists and is approved
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Doctor must exist and be approved
     doctor = await db.doctors.find_one({"id": req.doctor_id, "is_approved": True}, {"_id": 0})
     if not doctor:
-        raise HTTPException(status_code=404, detail="Doctor not found or not approved")
+        raise HTTPException(status_code=404, detail="Doctor not found or not approved.")
 
-    # 2. Block flagged no-show patients
+    # 2. Block patients flagged for repeated no-shows
     patient_record = await db.users.find_one({"id": user["id"]})
     if patient_record.get("flagged_noshow"):
         raise HTTPException(
             status_code=403,
-            detail="Your account has been temporarily restricted due to repeated no-shows. Please contact hello@sukhya.com to reactivate."
+            detail="Your account is restricted due to repeated no-shows. Contact hello@sukhya.com to reactivate."
         )
-        # Cooling period after cancellations
-    now_utc = datetime.now(timezone.utc)
-    week_ago = (now_utc - timedelta(days=7)).isoformat()
 
+    # 3. Validate date format and prevent past bookings
+    try:
+        booking_date = datetime.strptime(req.date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+    if booking_date < now_utc.date():
+        raise HTTPException(status_code=400, detail="Cannot book appointments in the past.")
+
+    # 4. Cooling period after cancellations (progressive penalty)
+    week_ago = (now_utc - timedelta(days=7)).isoformat()
     recent_cancels = await db.appointments.count_documents({
         "patient_id": user["id"],
         "status": "cancelled",
         "created_at": {"$gte": week_ago}
     })
-
     if recent_cancels >= 3:
         raise HTTPException(
             status_code=429,
-            detail="You have cancelled 3 appointments this week. You are blocked from booking for 7 days."
+            detail="You have cancelled 3 appointments this week. You cannot book for 7 days."
         )
-
-    if recent_cancels >= 2:
-        # Check last cancel was less than 48 hours ago
-        last_cancel = await db.appointments.find_one(
-            {"patient_id": user["id"], "status": "cancelled"},
-            sort=[("updated_at", -1)]
-        )
-        if last_cancel:
-            last_cancel_dt = datetime.fromisoformat(last_cancel["updated_at"])
-            hours_since = (now_utc - last_cancel_dt).total_seconds() / 3600
-            if hours_since < 48:
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"You must wait {int(48 - hours_since)} more hours before booking again."
-                )
-
     if recent_cancels >= 1:
-        # Check last cancel was less than 24 hours ago
         last_cancel = await db.appointments.find_one(
             {"patient_id": user["id"], "status": "cancelled"},
             sort=[("updated_at", -1)]
         )
-        if last_cancel:
-            last_cancel_dt = datetime.fromisoformat(last_cancel["updated_at"])
-            hours_since = (now_utc - last_cancel_dt).total_seconds() / 3600
-            if hours_since < 24:
+        if last_cancel and last_cancel.get("updated_at"):
+            last_dt = datetime.fromisoformat(last_cancel["updated_at"])
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            hours_since = (now_utc - last_dt).total_seconds() / 3600
+            required_wait = 48 if recent_cancels >= 2 else 24
+            if hours_since < required_wait:
+                hours_left = int(required_wait - hours_since) + 1
                 raise HTTPException(
                     status_code=429,
-                    detail=f"You must wait {int(24 - hours_since)} more hours before booking again."
+                    detail=f"You cancelled a recent appointment. Please wait {hours_left} more hour(s) before booking again."
                 )
 
-    # 3. Prevent booking in the past
-    try:
-        booking_date = datetime.strptime(req.date, "%Y-%m-%d").date()
-        if booking_date < datetime.now(timezone.utc).date():
-            raise HTTPException(status_code=400, detail="Cannot book appointments in the past.")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format.")
-
-    # 4. One appointment per doctor per day per patient (any slot)
-    same_day_book = await db.appointments.find_one({
-        "patient_id": user["id"],
-        "doctor_id": req.doctor_id,
-        "date": req.date,
-        "status": "booked"
-    })
-    if same_day_book:
-        raise HTTPException(
-            status_code=400,
-            detail="You already have an appointment with this doctor on this date. Only one appointment per doctor per day is allowed."
-        )
-
-    # 5. One total appointment per day across ALL doctors (prevent slot hoarding)
+    # 5. One appointment per day total (any doctor)
     any_day_book = await db.appointments.find_one({
         "patient_id": user["id"],
         "date": req.date,
@@ -1048,43 +1022,55 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             detail=f"You already have an appointment on {req.date}. Only one appointment per day is allowed."
         )
 
-    # 6. Check online consultation availability
-    if req.consultation_type == "online" and not doctor.get("online_consultation_enabled"):
-        raise HTTPException(status_code=400, detail="This doctor does not offer online consultations")
-
-    # 7. Check slot is in availability for that day
+    # 6. Validate slot is available for that day
     avail = await doctor_slots(req.doctor_id, req.date)
     available_times = [s["time"] for s in avail["slots"]]
     if req.time_slot not in available_times:
-        raise HTTPException(status_code=400, detail="Selected slot is not available")
+        raise HTTPException(status_code=400, detail="This time slot is not available. Please pick another.")
 
-    # 8. Concurrency safety: ensure no existing booking for that exact slot
-    existing = await db.appointments.find_one({"doctor_id": req.doctor_id, "date": req.date, "time_slot": req.time_slot, "status": "booked"})
+    # 7. Concurrency check — prevent two patients booking the same slot simultaneously
+    existing = await db.appointments.find_one({
+        "doctor_id": req.doctor_id,
+        "date": req.date,
+        "time_slot": req.time_slot,
+        "status": "booked"
+    })
     if existing:
-        raise HTTPException(status_code=409, detail="Slot just got booked. Please pick another.")
+        raise HTTPException(status_code=409, detail="This slot was just taken. Please pick another.")
 
+    # 8. Create appointment
     appt_id = str(uuid.uuid4())
     appt = {
         "id": appt_id,
-        "patient_id": user["id"], "patient_name": user["full_name"], "patient_email": user["email"], "patient_phone": user.get("phone"),
-        "doctor_id": req.doctor_id, "doctor_name": doctor["name"], "doctor_specialization": doctor["specialization"],
+        "patient_id": user["id"],
+        "patient_name": user["full_name"],
+        "patient_email": user["email"],
+        "patient_phone": user.get("phone"),
+        "doctor_id": req.doctor_id,
+        "doctor_name": doctor["name"],
+        "doctor_specialization": doctor["specialization"],
         "hospital_id": doctor.get("hospital_id"),
-        "date": req.date, "time_slot": req.time_slot,
-        "consultation_type": req.consultation_type, "status": "booked",
-        "reason": req.reason, "notes": None,
+        "date": req.date,
+        "time_slot": req.time_slot,
+        "consultation_type": "offline",
+        "status": "booked",
+        "reason": req.reason,
+        "notes": None,
         "cancellation_reason": None,
         "google_calendar_event_id": None,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now_utc.isoformat(),
+        "updated_at": now_utc.isoformat(),
     }
     await db.appointments.insert_one(appt)
-    # Push to Google Calendar if connected
+
+    # Push to doctor's Google Calendar if connected
     if doctor.get("google_calendar_connected"):
         ev_id = await _push_to_doctor_calendar(doctor, appt)
         if ev_id:
             await db.appointments.update_one({"id": appt_id}, {"$set": {"google_calendar_event_id": ev_id}})
             appt["google_calendar_event_id"] = ev_id
-    await write_audit(user["id"], "appointment_booked", "appointment", appt_id, request, {"doctor_id": req.doctor_id})
+
+    await write_audit(user["id"], "appointment_booked", "appointment", appt_id, request, {"doctor_id": req.doctor_id, "date": req.date})
     appt.pop("_id", None)
     return appt
 
@@ -1103,52 +1089,45 @@ async def list_appointments(user: dict = Depends(get_current_user)):
 
 @api.patch("/appointments/{appt_id}")
 async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Request, user: dict = Depends(get_current_user), _csrf=Depends(verify_csrf)):
+    now_utc = datetime.now(timezone.utc)
+
+    # Fetch appointment and verify ownership
     appt = await db.appointments.find_one({"id": appt_id}, {"_id": 0})
     if not appt:
-        raise HTTPException(status_code=404, detail="Appointment not found")
+        raise HTTPException(status_code=404, detail="Appointment not found.")
     if user["role"] == "patient" and appt["patient_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=403, detail="You can only modify your own appointments.")
     if user["role"] == "doctor" and appt["doctor_id"] != user["id"]:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(status_code=403, detail="You can only modify your own appointments.")
 
-    # Restrict status transitions by role
     if req.status:
         # Role-based status restrictions
-        if user["role"] == "patient" and req.status not in ("cancelled",):
-            raise HTTPException(status_code=403, detail="Patients can only cancel appointments")
+        if user["role"] == "patient" and req.status != "cancelled":
+            raise HTTPException(status_code=403, detail="Patients can only cancel appointments.")
         if user["role"] == "doctor" and req.status not in ("completed", "cancelled", "no_show"):
-            raise HTTPException(status_code=403, detail="Invalid status transition for doctor")
+            raise HTTPException(status_code=403, detail="Invalid status for doctor.")
 
-        # 24-hour cancellation rule (patients only)
+        # Patient cancellation rules
         if req.status == "cancelled" and user["role"] == "patient":
-            appt_dt = datetime.fromisoformat(f"{appt['date']}T{appt['time_slot']}:00").replace(tzinfo=timezone.utc)
-            hours_until = (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+            # Must be at least 24 hours before appointment
+            try:
+                appt_dt = datetime.fromisoformat(f"{appt['date']}T{appt['time_slot']}:00").replace(tzinfo=timezone.utc)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid appointment datetime.")
+            hours_until = (appt_dt - now_utc).total_seconds() / 3600
             if hours_until < 24:
                 raise HTTPException(
                     status_code=400,
-                    detail="Appointments can only be cancelled at least 24 hours in advance."
+                    detail=f"Appointments must be cancelled at least 24 hours in advance. This appointment is in {int(hours_until)} hour(s)."
                 )
 
-        # Max 3 cancellations per 7 days (patients only)
-        if req.status == "cancelled" and user["role"] == "patient":
-            week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-            recent_cancels = await db.appointments.count_documents({
-                "patient_id": user["id"],
-                "status": "cancelled",
-                "created_at": {"$gte": week_ago}
-            })
-            if recent_cancels >= 3:
-                raise HTTPException(
-                    status_code=429,
-                    detail="You have cancelled 3 appointments this week. Please wait before cancelling again."
-                )
-
+    # Apply update
     update = {k: v for k, v in req.model_dump(exclude_none=True).items()}
-    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update["updated_at"] = now_utc.isoformat()
     await db.appointments.update_one({"id": appt_id}, {"$set": update})
-    await write_audit(user["id"], "appointment_updated", "appointment", appt_id, request, {"changes": update})
+    await write_audit(user["id"], "appointment_updated", "appointment", appt_id, request, {"changes": list(update.keys()), "new_status": req.status})
 
-    # Auto-flag patients with repeated no-shows
+    # Auto-flag patients with 3+ no-shows
     if req.status == "no_show":
         total_noshows = await db.appointments.count_documents({
             "patient_id": appt["patient_id"],
@@ -1157,9 +1136,10 @@ async def update_appointment(appt_id: str, req: AppointmentUpdate, request: Requ
         if total_noshows >= 3:
             await db.users.update_one(
                 {"id": appt["patient_id"]},
-                {"$set": {"flagged_noshow": True, "flagged_at": datetime.now(timezone.utc).isoformat()}}
+                {"$set": {"flagged_noshow": True, "flagged_at": now_utc.isoformat()}}
             )
             await write_audit(user["id"], "patient_flagged_noshow", "user", appt["patient_id"], request, {"total_noshows": total_noshows})
+            logger.info(f"Patient {appt['patient_id']} flagged for repeated no-shows ({total_noshows})")
 
     return {**appt, **update}
 
