@@ -953,11 +953,15 @@ async def _push_to_doctor_calendar(doctor: dict, appt: dict):
         return None
 
 
+# IST offset (UTC+5:30)
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
 # ---------------- APPOINTMENTS ----------------
 @api.post("/appointments")
 @limiter.limit("10/minute")
 async def book_appointment(req: AppointmentCreate, request: Request, user: dict = Depends(require_role("patient")), _csrf=Depends(verify_csrf)):
     now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc + IST_OFFSET
 
     # 1. Doctor must exist and be approved
     doctor = await db.doctors.find_one({"id": req.doctor_id, "is_approved": True}, {"_id": 0})
@@ -972,63 +976,46 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             detail="Your account is restricted due to repeated no-shows. Contact hello@sukhya.com to reactivate."
         )
 
-    # 3. Validate date format and prevent past bookings
+    # 3. Validate date format
     try:
         booking_date = datetime.strptime(req.date, "%Y-%m-%d").date()
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
-    if booking_date < now_utc.date():
+
+    # 4. Prevent booking in the past (IST-aware)
+    today_ist = now_ist.date()
+    if booking_date < today_ist:
         raise HTTPException(status_code=400, detail="Cannot book appointments in the past.")
 
-    # 4. Cooling period after cancellations (progressive penalty)
-    week_ago = (now_utc - timedelta(days=7)).isoformat()
-    recent_cancels = await db.appointments.count_documents({
-        "patient_id": user["id"],
-        "status": "cancelled",
-        "created_at": {"$gte": week_ago}
-    })
-    if recent_cancels >= 3:
-        raise HTTPException(
-            status_code=429,
-            detail="You have cancelled 3 appointments this week. You cannot book for 7 days."
-        )
-    if recent_cancels >= 1:
-        last_cancel = await db.appointments.find_one(
-            {"patient_id": user["id"], "status": "cancelled"},
-            sort=[("updated_at", -1)]
-        )
-        if last_cancel and last_cancel.get("updated_at"):
-            last_dt = datetime.fromisoformat(last_cancel["updated_at"])
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=timezone.utc)
-            hours_since = (now_utc - last_dt).total_seconds() / 3600
-            required_wait = 48 if recent_cancels >= 2 else 24
-            if hours_since < required_wait:
-                hours_left = int(required_wait - hours_since) + 1
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"You cancelled a recent appointment. Please wait {hours_left} more hour(s) before booking again."
-                )
+    # 5. Prevent booking a slot that has already passed today (IST-aware)
+    if booking_date == today_ist:
+        try:
+            slot_h, slot_m = map(int, req.time_slot.split(":"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time slot format.")
+        slot_minutes = slot_h * 60 + slot_m
+        now_minutes = now_ist.hour * 60 + now_ist.minute
+        if slot_minutes <= now_minutes:
+            raise HTTPException(status_code=400, detail="This slot has already passed. Please pick a future slot.")
 
-    # 5. One appointment per day total (any doctor)
-    any_day_book = await db.appointments.find_one({
+    # 6. One active booking at a time across ALL doctors
+    active_booking = await db.appointments.find_one({
         "patient_id": user["id"],
-        "date": req.date,
         "status": "booked"
     })
-    if any_day_book:
+    if active_booking:
         raise HTTPException(
             status_code=400,
-            detail=f"You already have an appointment on {req.date}. Only one appointment per day is allowed."
+            detail=f"You already have an active appointment with {active_booking['doctor_name']} on {active_booking['date']} at {active_booking['time_slot']}. Complete or attend it before booking another."
         )
 
-    # 6. Validate slot is available for that day
+    # 7. Validate slot is available for that day
     avail = await doctor_slots(req.doctor_id, req.date)
     available_times = [s["time"] for s in avail["slots"]]
     if req.time_slot not in available_times:
         raise HTTPException(status_code=400, detail="This time slot is not available. Please pick another.")
 
-    # 7. Concurrency check — prevent two patients booking the same slot simultaneously
+    # 8. Concurrency check
     existing = await db.appointments.find_one({
         "doctor_id": req.doctor_id,
         "date": req.date,
