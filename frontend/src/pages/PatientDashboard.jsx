@@ -172,10 +172,24 @@ export default function PatientDashboard() {
     };
 
     const now = new Date();
+    // IST-aware: appointment is upcoming if status is booked and slot hasn't passed yet in IST
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+    const nowIST = new Date(Date.now() + IST_OFFSET);
     const upcoming = appts
-        .filter(a => a.status === "booked" && new Date(`${a.date}T${a.time_slot}:00`) >= now)
-        .sort((a,b) => new Date(`${a.date}T${a.time_slot}`) - new Date(`${b.date}T${b.time_slot}`));
-    const past = appts.filter(a => a.status !== "booked" || new Date(`${a.date}T${a.time_slot}:00`) < now);
+        .filter(a => {
+            if (a.status !== "booked") return false;
+            const [h, m] = a.time_slot.split(":").map(Number);
+            const slotIST = new Date(`${a.date}T00:00:00Z`);
+            slotIST.setUTCHours(h, m, 0, 0);
+            // Add IST offset back so comparison works correctly
+            return slotIST.getTime() > nowIST.getTime() - IST_OFFSET;
+        })
+        .sort((a,b) => {
+            const da = new Date(`${a.date}T${a.time_slot}:00`);
+            const db2 = new Date(`${b.date}T${b.time_slot}:00`);
+            return da - db2;
+        });
+    const past = appts.filter(a => a.status !== "booked");
 
     return (
         <div className="min-h-screen">
