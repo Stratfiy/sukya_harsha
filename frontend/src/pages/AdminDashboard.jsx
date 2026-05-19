@@ -4,7 +4,7 @@ import api, { formatApiError } from "../lib/api";
 import {
     Users, Stethoscope, Calendar, IndianRupee, CheckCircle2, XCircle,
     Building, Plus, Trash2, AlertCircle, Clock, Activity,
-    TrendingUp, UserCheck, UserX, RefreshCw
+    TrendingUp, UserCheck, UserX, RefreshCw, Mail, Send, ChevronDown, Eye, EyeOff
 } from "lucide-react";
 
 const SPECIALTIES = [
@@ -164,6 +164,9 @@ export default function AdminDashboard() {
                 {/* DOCTORS */}
                 {tab === "doctors" && (
                     <div className="mt-8 space-y-6">
+                        {/* Invite Doctor */}
+                        <InviteDoctor hospitals={hospitals} onInvited={load} />
+
                         {/* Pending */}
                         <div className="glass rounded-2xl p-5 sm:p-6">
                             <div className="flex items-center gap-3 mb-5">
@@ -383,6 +386,189 @@ function StatCard({ icon: Icon, label, value, sub, color }) {
             </div>
             <p className="editorial text-3xl sm:text-4xl text-mint-800">{value}</p>
             {sub && <p className="mt-1 text-xs text-mint-800/50">{sub}</p>}
+        </div>
+    );
+}
+
+function InviteDoctor({ hospitals, onInvited }) {
+    const [open, setOpen] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [done, setDone] = useState(null); // { email, hospital, temp_password, email_sent }
+    const [error, setError] = useState("");
+    const [showPass, setShowPass] = useState(false);
+    const [form, setForm] = useState({
+        email: "", full_name: "", hospital_id: "",
+        specialization: "", license_number: "",
+        years_of_experience: 1, consultation_fee: 1000,
+    });
+    const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+    const SPECS = [
+        "Cardiology","Dermatology","Endocrinology","Gastroenterology",
+        "General Medicine","General Surgery","Gynaecology","Neurology",
+        "Oncology","Ophthalmology","Orthopaedics","Paediatrics",
+        "Psychiatry","Pulmonology","Radiology","Urology",
+    ];
+
+    const send = async () => {
+        setSaving(true); setError("");
+        try {
+            const { data } = await api.post("/admin/invite-doctor", {
+                ...form,
+                years_of_experience: Number(form.years_of_experience),
+                consultation_fee: Number(form.consultation_fee),
+            });
+            setDone(data);
+            onInvited();
+        } catch (e) {
+            setError(formatApiError(e.response?.data?.detail));
+        } finally { setSaving(false); }
+    };
+
+    const reset = () => {
+        setDone(null); setOpen(false); setError("");
+        setForm({ email: "", full_name: "", hospital_id: "", specialization: "", license_number: "", years_of_experience: 1, consultation_fee: 1000 });
+    };
+
+    return (
+        <div className="glass rounded-2xl overflow-hidden">
+            {/* Header — always visible */}
+            <button onClick={() => setOpen(o => !o)} className="w-full flex items-center justify-between p-5 sm:p-6 text-left hover:bg-mint-50/30 transition">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-mint-600/10 flex items-center justify-center">
+                        <Mail size={18} className="text-mint-600" />
+                    </div>
+                    <div>
+                        <h2 className="editorial text-2xl text-mint-800">Invite a doctor</h2>
+                        <p className="text-xs text-mint-800/50 mt-0.5">Send login credentials via email to onboard a new doctor</p>
+                    </div>
+                </div>
+                <ChevronDown size={18} className={`text-mint-600 transition-transform ${open ? "rotate-180" : ""}`} />
+            </button>
+
+            {/* Form */}
+            {open && !done && (
+                <div className="border-t border-mint-100 p-5 sm:p-6">
+                    <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Doctor's email address</label>
+                            <input type="email" value={form.email} onChange={e => set("email", e.target.value)}
+                                placeholder="doctor@example.com"
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500" />
+                        </div>
+                        <div className="sm:col-span-2">
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Full name</label>
+                            <input value={form.full_name} onChange={e => set("full_name", e.target.value)}
+                                placeholder="Dr. Full Name"
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500" />
+                        </div>
+                        <div>
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Hospital</label>
+                            <select value={form.hospital_id} onChange={e => set("hospital_id", e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500">
+                                <option value="">Select hospital</option>
+                                {hospitals.map(h => <option key={h.id} value={h.id}>{h.name} — {h.area}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Specialization</label>
+                            <select value={form.specialization} onChange={e => set("specialization", e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500">
+                                <option value="">Select specialization</option>
+                                {SPECS.map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">License number</label>
+                            <input value={form.license_number} onChange={e => set("license_number", e.target.value)}
+                                placeholder="MH-CARD-12001"
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500" />
+                        </div>
+                        <div>
+                            <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Consultation fee (₹)</label>
+                            <input type="number" min={0} value={form.consultation_fee} onChange={e => set("consultation_fee", e.target.value)}
+                                className="w-full px-4 py-3 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500" />
+                        </div>
+                    </div>
+
+                    {error && (
+                        <div className="mt-4 flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                            <AlertCircle size={14} /> {error}
+                        </div>
+                    )}
+
+                    <div className="mt-5 flex gap-3">
+                        <button onClick={reset} className="btn-pill btn-ghost text-sm px-5">Cancel</button>
+                        <button onClick={send}
+                            disabled={saving || !form.email || !form.hospital_id || !form.specialization || !form.full_name}
+                            className="flex-1 btn-pill btn-primary text-sm justify-center disabled:opacity-40">
+                            {saving
+                                ? <><RefreshCw size={14} className="animate-spin" /> Sending invite…</>
+                                : <><Send size={14} /> Send invite email</>
+                            }
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Success state */}
+            {open && done && (
+                <div className="border-t border-mint-100 p-5 sm:p-6">
+                    <div className="flex items-center gap-3 mb-5">
+                        <div className="w-10 h-10 rounded-xl bg-mint-600/10 flex items-center justify-center">
+                            <CheckCircle2 size={18} className="text-mint-600" />
+                        </div>
+                        <div>
+                            <p className="font-semibold text-mint-800">Invite sent successfully!</p>
+                            <p className="text-xs text-mint-800/50">
+                                {done.email_sent ? "Email delivered to doctor's inbox." : "Email not configured — credentials shown below."}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Credentials summary card */}
+                    <div className="rounded-2xl bg-mint-50/60 border border-mint-200 overflow-hidden mb-5">
+                        <div className="px-5 py-3 border-b border-mint-100 flex items-center justify-between">
+                            <p className="text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Doctor credentials</p>
+                            {!done.email_sent && (
+                                <span className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-full px-2 py-0.5">
+                                    Email not sent — share manually
+                                </span>
+                            )}
+                        </div>
+                        <div className="divide-y divide-mint-100">
+                            {[
+                                ["Email", done.email],
+                                ["Hospital", done.hospital],
+                            ].map(([label, val]) => (
+                                <div key={label} className="flex items-center justify-between px-5 py-3">
+                                    <span className="text-xs text-mint-800/50 w-36">{label}</span>
+                                    <span className="text-sm text-mint-800 font-medium">{val}</span>
+                                </div>
+                            ))}
+                            <div className="flex items-center justify-between px-5 py-3">
+                                <span className="text-xs text-mint-800/50 w-36">Temp password</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-mono text-mint-800 font-semibold">
+                                        {showPass ? done.temp_password : "••••••••••••"}
+                                    </span>
+                                    <button onClick={() => setShowPass(s => !s)} className="text-mint-400 hover:text-mint-600 transition">
+                                        {showPass ? <EyeOff size={13} /> : <Eye size={13} />}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="text-xs text-mint-800/40 mb-5">
+                        The doctor needs to log in, complete their profile, and then wait for your approval to go live on the platform.
+                    </div>
+
+                    <button onClick={reset} className="btn-pill btn-primary text-sm">
+                        <Mail size={14} /> Invite another doctor
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
