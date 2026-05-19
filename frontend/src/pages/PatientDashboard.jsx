@@ -1,13 +1,32 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import api from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import {
-    Calendar, FileText, Sparkles, Search, Heart,
-    Clock, Download, Star, MapPin, Stethoscope,
-    ArrowRight, ChevronDown, ChevronUp, Pill, User
+    Calendar, FileText, Sparkles, Heart, Clock,
+    Download, Star, ChevronDown, ChevronUp, Pill,
+    User, AlertCircle, CheckCircle
 } from "lucide-react";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+    if (!iso) return "";
+    const [y, m, d] = iso.split("-");
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${parseInt(d)} ${months[parseInt(m)-1]} ${y}`;
+}
+
+function countdown(dateStr, timeStr) {
+    const IST_MS = 5.5 * 60 * 60 * 1000;
+    const slotUTC = new Date(`${dateStr}T${timeStr}:00Z`).getTime() - IST_MS;
+    const diff = slotUTC - Date.now();
+    if (diff <= 0) return null;
+    const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
+    if (d > 0) return `in ${d}d ${h}h`;
+    if (h > 0) return `in ${h}h ${m}m`;
+    return `in ${m}m`;
+}
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
 function generatePrescriptionPDF(prescription) {
@@ -57,15 +76,7 @@ ${prescription.additional_notes?`<div class="label">Notes</div><div class="notes
     URL.revokeObjectURL(url);
 }
 
-function countdown(dateStr, timeStr) {
-    const diff = new Date(`${dateStr}T${timeStr}:00`) - new Date();
-    if (diff <= 0) return null;
-    const d = Math.floor(diff/86400000), h = Math.floor((diff%86400000)/3600000), m = Math.floor((diff%3600000)/60000);
-    if (d > 0) return `in ${d}d ${h}h`;
-    if (h > 0) return `in ${h}h ${m}m`;
-    return `in ${m}m`;
-}
-
+// ─── Star Rating ──────────────────────────────────────────────────────────────
 function StarRating({ value, onChange }) {
     return (
         <div className="flex gap-1">
@@ -89,7 +100,9 @@ function PresCard({ p }) {
                     <p className="font-medium text-mint-800">{p.diagnosis}
                         {p.is_voided && <span className="ml-2 text-xs text-red-500 border border-red-200 rounded-full px-2 py-0.5">Voided</span>}
                     </p>
-                    <p className="text-xs text-mint-800/60 mt-0.5">by {p.doctor_name} · {new Date(p.created_at).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+                    <p className="text-xs text-mint-800/60 mt-0.5">
+                        by {p.doctor_name} · {fmtDate(p.created_at?.slice(0,10))}
+                    </p>
                     <p className="text-xs text-mint-800/50 mt-1 flex items-center gap-1">
                         <Pill size={11} className="text-mint-600" />
                         {(p.medications||[]).map(m => m.name).join(" · ")}
@@ -105,7 +118,6 @@ function PresCard({ p }) {
                     {open ? <ChevronUp size={16} className="text-mint-800/40" /> : <ChevronDown size={16} className="text-mint-800/40" />}
                 </div>
             </button>
-
             {open && (
                 <div className="px-5 pb-5 border-t border-mint-100 pt-4">
                     <div className="grid grid-cols-4 gap-2 text-xs font-semibold text-mint-800/40 uppercase tracking-wider mb-2">
@@ -155,15 +167,6 @@ export default function PatientDashboard() {
         localStorage.setItem("sm_favourites", JSON.stringify(next));
     };
 
-    const cancel = async (id) => {
-        try {
-            await api.patch(`/appointments/${id}`, { status: "cancelled", cancellation_reason: "Cancelled by patient" });
-            load();
-        } catch (e) {
-            alert(e.response?.data?.detail || "Could not cancel appointment.");
-        }
-    };
-
     const submitRating = (apptId) => {
         const next = { ...ratings, [apptId]: { stars: ratingValue, note: ratingNote, date: new Date().toISOString() } };
         setRatings(next);
@@ -171,30 +174,29 @@ export default function PatientDashboard() {
         setRatingForm(null); setRatingNote(""); setRatingValue(5);
     };
 
-    const now = new Date();
-    // IST-aware: appointment is upcoming if status is booked and slot hasn't passed yet in IST
-    const IST_OFFSET = 5.5 * 60 * 60 * 1000; // 5h30m in ms
-    const nowIST = new Date(Date.now() + IST_OFFSET);
+    // IST-aware filter — upcoming = booked & slot not yet passed
+    const IST_MS = 5.5 * 60 * 60 * 1000;
+    const nowIST = new Date(Date.now() + IST_MS);
+
     const upcoming = appts
         .filter(a => {
             if (a.status !== "booked") return false;
             const [h, m] = a.time_slot.split(":").map(Number);
-            const slotIST = new Date(`${a.date}T00:00:00Z`);
-            slotIST.setUTCHours(h, m, 0, 0);
-            // Add IST offset back so comparison works correctly
-            return slotIST.getTime() > nowIST.getTime() - IST_OFFSET;
+            // Build slot time in UTC treating the date+time as IST
+            const slotUTC = new Date(`${a.date}T${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:00Z`).getTime() - IST_MS;
+            return slotUTC > Date.now();
         })
-        .sort((a,b) => {
-            const da = new Date(`${a.date}T${a.time_slot}:00`);
-            const db2 = new Date(`${b.date}T${b.time_slot}:00`);
-            return da - db2;
-        });
+        .sort((a,b) => new Date(`${a.date}T${a.time_slot}`) - new Date(`${b.date}T${b.time_slot}`));
+
     const past = appts.filter(a => a.status !== "booked");
+
+    // Check if patient has an active booking (to hide/show book button)
+    const hasActiveBooking = upcoming.length > 0;
 
     return (
         <div className="min-h-screen">
             <Navbar />
-            <section className="mx-auto max-w-5xl px-6 pt-10 pb-24 space-y-10" data-testid="patient-dashboard">
+            <section className="mx-auto max-w-5xl px-6 pt-10 pb-24 space-y-8" data-testid="patient-dashboard">
 
                 {/* ── HEADER ── */}
                 <div>
@@ -205,29 +207,46 @@ export default function PatientDashboard() {
                     <p className="mt-2 text-mint-800/70">Your care, all in one place.</p>
                 </div>
 
-                {/* ── REMINDER BANNER ── */}
-                {upcoming[0] && countdown(upcoming[0].date, upcoming[0].time_slot) && (
-                    <div className="glass-mint rounded-2xl px-5 py-4 flex items-center gap-3">
-                        <Clock size={18} className="text-mint-600 flex-shrink-0" />
-                        <p className="text-sm text-mint-800">
-                            <strong>Next:</strong> {upcoming[0].doctor_name} · {upcoming[0].date} at {upcoming[0].time_slot} —{" "}
-                            <span className="text-mint-600 font-semibold">{countdown(upcoming[0].date, upcoming[0].time_slot)}</span>
-                        </p>
-                    </div>
-                )}
+                {/* ── ACTIVE BOOKING BANNER ── */}
+                {hasActiveBooking && (() => {
+                    const a = upcoming[0];
+                    const cd = countdown(a.date, a.time_slot);
+                    return (
+                        <div className="glass-mint rounded-2xl px-5 py-4 flex items-start gap-3">
+                            <Clock size={18} className="text-mint-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-semibold text-mint-800">Active appointment</p>
+                                <p className="text-sm text-mint-800/80 mt-0.5">
+                                    {a.doctor_name} · {a.doctor_specialization} · {fmtDate(a.date)} at {a.time_slot}
+                                    {cd && <span className="ml-2 text-mint-600 font-semibold">{cd}</span>}
+                                </p>
+                                <p className="text-xs text-mint-800/50 mt-1">You cannot book another appointment until this one is completed.</p>
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* ── QUICK STATS ── */}
                 <div className="grid grid-cols-3 gap-4">
                     <div className="glass-mint rounded-2xl p-5">
-                        <div className="flex items-center gap-2 mb-2"><Calendar size={15} className="text-mint-600" /><p className="overline text-xs">Upcoming</p></div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Calendar size={15} className="text-mint-600" />
+                            <p className="overline text-xs">Upcoming</p>
+                        </div>
                         <p className="editorial text-4xl text-mint-800">{upcoming.length}</p>
                     </div>
                     <div className="glass-mint rounded-2xl p-5">
-                        <div className="flex items-center gap-2 mb-2"><FileText size={15} className="text-mint-600" /><p className="overline text-xs">Prescriptions</p></div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <FileText size={15} className="text-mint-600" />
+                            <p className="overline text-xs">Prescriptions</p>
+                        </div>
                         <p className="editorial text-4xl text-mint-800">{pres.length}</p>
                     </div>
                     <div className="glass-mint rounded-2xl p-5">
-                        <div className="flex items-center gap-2 mb-2"><Heart size={15} className="text-mint-600" /><p className="overline text-xs">Saved Doctors</p></div>
+                        <div className="flex items-center gap-2 mb-2">
+                            <Heart size={15} className="text-mint-600" />
+                            <p className="overline text-xs">Saved Doctors</p>
+                        </div>
                         <p className="editorial text-4xl text-mint-800">{favourites.length}</p>
                     </div>
                 </div>
@@ -251,16 +270,22 @@ export default function PatientDashboard() {
                     </div>
                 )}
 
-                {/* ── UPCOMING APPOINTMENTS ── */}
+                {/* ── APPOINTMENTS ── */}
                 <div className="glass rounded-2xl p-6" id="appointments" data-testid="upcoming">
                     <div className="flex items-center justify-between mb-5">
                         <h2 className="editorial text-3xl text-mint-800">Appointments</h2>
-                        <Link to="/find-doctors" className="btn-pill btn-primary text-sm py-2.5 px-5">
-                            Book appointment
-                        </Link>
+                        {!hasActiveBooking ? (
+                            <Link to="/find-doctors" className="btn-pill btn-primary text-sm py-2.5 px-5">
+                                Book appointment
+                            </Link>
+                        ) : (
+                            <span className="flex items-center gap-1.5 text-xs text-mint-600 px-3 py-2 rounded-full bg-mint-50 border border-mint-100">
+                                <CheckCircle size={13} /> Active booking
+                            </span>
+                        )}
                     </div>
 
-                    {/* Upcoming */}
+                    {/* Upcoming list */}
                     {upcoming.length === 0 ? (
                         <div className="py-6 text-center">
                             <Calendar size={28} className="text-mint-200 mx-auto mb-2" />
@@ -278,69 +303,76 @@ export default function PatientDashboard() {
                                         <div>
                                             <p className="editorial text-xl text-mint-800">{a.doctor_name}</p>
                                             <p className="text-xs text-mint-700 font-medium">{a.doctor_specialization}</p>
-                                            <p className="text-sm text-mint-800/70 mt-0.5">{a.date} · {a.time_slot}</p>
+                                            <p className="text-sm text-mint-800/70 mt-0.5">
+                                                {fmtDate(a.date)} · {a.time_slot}
+                                            </p>
                                             {cd && <span className="text-xs text-mint-600 font-semibold">{cd}</span>}
                                             {a.reason && <p className="text-xs text-mint-800/50 italic mt-0.5">"{a.reason}"</p>}
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <button onClick={() => toggleFav(a)}
-                                                className={`p-2 rounded-xl transition ${isFav ? "text-mint-600 bg-mint-100" : "text-mint-800/30 hover:text-mint-600 hover:bg-mint-50"}`}
-                                                title={isFav ? "Remove from saved" : "Save doctor"}>
-                                                <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
-                                            </button>
-
-                                        </div>
+                                        <button onClick={() => toggleFav(a)}
+                                            className={`p-2 rounded-xl transition ${isFav ? "text-mint-600 bg-mint-100" : "text-mint-800/30 hover:text-mint-600 hover:bg-mint-50"}`}
+                                            title={isFav ? "Remove from saved" : "Save doctor"}>
+                                            <Heart size={15} fill={isFav ? "#1F8A4D" : "none"} />
+                                        </button>
                                     </div>
                                 );
                             })}
                         </div>
                     )}
 
-                    {/* Past / History */}
+                    {/* History */}
                     {past.length > 0 && (
-                        <>
-                            <div className="border-t border-mint-100 pt-5 mt-2">
-                                <p className="overline mb-3">History</p>
-                                <div className="space-y-2">
-                                    {past.slice(0, 8).map(a => (
-                                        <div key={a.id} className="py-2.5 border-b border-mint-50 last:border-0">
-                                            <div className="flex items-center justify-between flex-wrap gap-2">
-                                                <div>
-                                                    <p className="text-sm text-mint-800">{a.doctor_name}
-                                                        <span className="text-mint-800/50 font-normal"> · {a.doctor_specialization}</span>
-                                                    </p>
-                                                    <p className="text-xs text-mint-800/50">{a.date} · {a.time_slot} · <span className="capitalize">{a.status}</span></p>
-                                                </div>
-                                                {a.status === "completed" && !ratings[a.id] && (
-                                                    <button onClick={() => { setRatingForm(a.id); setRatingValue(5); setRatingNote(""); }}
-                                                        className="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-600 border border-mint-100 hover:bg-mint-100 transition">
-                                                        Rate doctor
-                                                    </button>
-                                                )}
-                                                {ratings[a.id] && (
-                                                    <div className="flex items-center gap-0.5">
-                                                        {[...Array(ratings[a.id].stars)].map((_,i) => <Star key={i} size={11} fill="#1F8A4D" stroke="#1F8A4D" />)}
-                                                    </div>
-                                                )}
+                        <div className="border-t border-mint-100 pt-5 mt-2">
+                            <p className="overline mb-3">History</p>
+                            <div className="space-y-2">
+                                {past.slice(0, 10).map(a => (
+                                    <div key={a.id} className="py-2.5 border-b border-mint-50 last:border-0">
+                                        <div className="flex items-center justify-between flex-wrap gap-2">
+                                            <div>
+                                                <p className="text-sm text-mint-800">
+                                                    {a.doctor_name}
+                                                    <span className="text-mint-800/50 font-normal"> · {a.doctor_specialization}</span>
+                                                </p>
+                                                <p className="text-xs text-mint-800/50">
+                                                    {fmtDate(a.date)} · {a.time_slot} ·{" "}
+                                                    <span className={`capitalize font-medium ${
+                                                        a.status === "completed" ? "text-mint-600" :
+                                                        a.status === "no_show" ? "text-amber-600" :
+                                                        a.status === "cancelled" ? "text-red-500" : ""
+                                                    }`}>{a.status.replace("_"," ")}</span>
+                                                </p>
                                             </div>
-                                            {ratingForm === a.id && (
-                                                <div className="mt-3 p-4 rounded-xl bg-mint-50 border border-mint-100 space-y-3">
-                                                    <p className="text-xs font-semibold text-mint-800">Rate your experience with {a.doctor_name}</p>
-                                                    <StarRating value={ratingValue} onChange={setRatingValue} />
-                                                    <textarea rows={2} value={ratingNote} onChange={e => setRatingNote(e.target.value)}
-                                                        placeholder="Short review (optional)"
-                                                        className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-mint-500 resize-none" />
-                                                    <div className="flex gap-2">
-                                                        <button onClick={() => submitRating(a.id)} className="btn-pill btn-primary text-xs py-2 px-4">Submit</button>
-                                                        <button onClick={() => setRatingForm(null)} className="btn-pill btn-ghost text-xs py-2 px-4">Cancel</button>
-                                                    </div>
+                                            {a.status === "completed" && !ratings[a.id] && (
+                                                <button onClick={() => { setRatingForm(a.id); setRatingValue(5); setRatingNote(""); }}
+                                                    className="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-600 border border-mint-100 hover:bg-mint-100 transition">
+                                                    Rate doctor
+                                                </button>
+                                            )}
+                                            {ratings[a.id] && (
+                                                <div className="flex items-center gap-0.5">
+                                                    {[...Array(ratings[a.id].stars)].map((_,i) => (
+                                                        <Star key={i} size={11} fill="#1F8A4D" stroke="#1F8A4D" />
+                                                    ))}
                                                 </div>
                                             )}
                                         </div>
-                                    ))}
-                                </div>
+                                        {ratingForm === a.id && (
+                                            <div className="mt-3 p-4 rounded-xl bg-mint-50 border border-mint-100 space-y-3">
+                                                <p className="text-xs font-semibold text-mint-800">Rate your experience with {a.doctor_name}</p>
+                                                <StarRating value={ratingValue} onChange={setRatingValue} />
+                                                <textarea rows={2} value={ratingNote} onChange={e => setRatingNote(e.target.value)}
+                                                    placeholder="Short review (optional)"
+                                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-mint-500 resize-none" />
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => submitRating(a.id)} className="btn-pill btn-primary text-xs py-2 px-4">Submit</button>
+                                                    <button onClick={() => setRatingForm(null)} className="btn-pill btn-ghost text-xs py-2 px-4">Cancel</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
-                        </>
+                        </div>
                     )}
                 </div>
 
@@ -350,7 +382,9 @@ export default function PatientDashboard() {
                         <h2 className="editorial text-3xl text-mint-800">Prescriptions</h2>
                         <span className="text-xs text-mint-800/50">{pres.length} total</span>
                     </div>
-                    <p className="text-sm text-mint-800/60 mb-5">Click any prescription to expand. Download as a file to share with a pharmacy.</p>
+                    <p className="text-sm text-mint-800/60 mb-5">
+                        Click any prescription to expand. Download as a file to share with a pharmacy.
+                    </p>
                     {pres.length === 0 ? (
                         <div className="py-8 text-center">
                             <FileText size={28} className="text-mint-200 mx-auto mb-2" />
