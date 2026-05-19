@@ -1101,6 +1101,36 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
         except Exception as e:
             logger.warning("Booking confirmation email failed: %s", e)
 
+    # Send notification email to doctor
+    if RESEND_API_KEY:
+        try:
+            doctor_user = await db.users.find_one({"id": doctor["user_id"]})
+            if doctor_user and doctor_user.get("email"):
+                resend.Emails.send({
+                    "from": RESEND_FROM,
+                    "to": [doctor_user["email"]],
+                    "subject": f"New appointment — {appt['patient_name']} on {req.date} at {req.time_slot}",
+                    "html": f"""
+                    <div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px;background:#fff;color:#0a2518">
+                      <div style="border-bottom:3px solid #1F8A4D;padding-bottom:16px;margin-bottom:24px">
+                        <span style="font-size:24px">Sukhya <span style="color:#1F8A4D;font-style:italic">Med</span></span>
+                      </div>
+                      <h2 style="font-weight:400;font-size:22px">New appointment booked</h2>
+                      <table style="width:100%;border-collapse:collapse;background:#EEFBF3;border-radius:8px;overflow:hidden;margin:20px 0">
+                        <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59;width:40%">Patient</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{appt['patient_name']}</td></tr>
+                        <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Phone</td><td style="padding:10px 16px;font-size:13px">{appt.get('patient_phone') or 'Not provided'}</td></tr>
+                        <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Date</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{req.date}</td></tr>
+                        <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Time</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{req.time_slot}</td></tr>
+                        <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Reason</td><td style="padding:10px 16px;font-size:13px">{req.reason or 'Not specified'}</td></tr>
+                      </table>
+                      <a href="{os.environ.get('FRONTEND_URL', 'https://www.sukhya.com')}/doctor/dashboard" style="display:inline-block;background:#1F8A4D;color:#fff;text-decoration:none;padding:12px 28px;border-radius:50px;font-size:14px">View in dashboard →</a>
+                      <div style="border-top:1px solid #D4F5E2;margin-top:32px;padding-top:16px;font-size:11px;color:#999">© {datetime.now().year} Sukhya Med · sukhya.com</div>
+                    </div>
+                    """,
+                })
+        except Exception as e:
+            logger.warning("Doctor notification email failed: %s", e)
+
     appt.pop("_id", None)
     return appt
 
@@ -1292,6 +1322,223 @@ async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: R
         raise HTTPException(status_code=404, detail="Doctor not found")
     await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
     return {"approved": False}
+
+
+@api.post("/admin/invite-doctor")
+async def admin_invite_doctor(req: dict, request: Request, user: dict = Depends(require_role("admin")), _csrf=Depends(verify_csrf)):
+    """Admin invites a doctor by email — creates account with temp password, sends invite email."""
+    from pydantic import BaseModel
+    email = req.get("email", "").lower().strip()
+    hospital_id = req.get("hospital_id", "")
+    if not email or not hospital_id:
+        raise HTTPException(status_code=400, detail="email and hospital_id are required.")
+
+    # Check if user already exists
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="A user with this email already exists.")
+
+    hospital = await db.hospitals.find_one({"id": hospital_id})
+    if not hospital:
+        raise HTTPException(status_code=400, detail="Hospital not found.")
+
+    # Generate temp password and create user
+    now_utc = datetime.now(timezone.utc)
+    import secrets, string
+    temp_pw = "Dr" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10)) + "!"
+    uid = str(uuid.uuid4())
+    hashed = bcrypt.hashpw(temp_pw.encode(), bcrypt.gensalt(12)).decode()
+
+    user_doc = {
+        "id": uid, "email": email, "password_hash": hashed,
+        "full_name": "", "phone": "", "role": "doctor",
+        "is_active": True, "consent": True, "mfa_enabled": False,
+        "created_at": now_utc.isoformat(), "updated_at": now_utc.isoformat(),
+        "avatar_url": None, "flagged_noshow": False,
+        "must_change_password": True,
+    }
+    await db.users.insert_one(user_doc)
+
+    # Create doctor profile stub
+    doc_id = uid
+    doctor_doc = {
+        "id": doc_id, "user_id": uid, "hospital_id": hospital_id,
+        "name": "", "email": email, "specialization": "",
+        "years_of_experience": 0, "license_number": "",
+        "bio": "", "profile_photo_url": "", "consultation_fee": 0,
+        "online_consultation_enabled": False, "google_calendar_connected": False,
+        "google_calendar_token": None, "rating": 0.0, "reviews_count": 0,
+        "is_approved": False, "approved_by": None, "approved_at": None,
+        "availability": [], "today_mode": None,
+        "profile_complete": False,
+        "created_at": now_utc.isoformat(), "updated_at": now_utc.isoformat(),
+    }
+    await db.doctors.insert_one(doctor_doc)
+
+    # Send invite email
+    invite_url = f"{os.environ.get('FRONTEND_URL', 'https://www.sukhya.com')}/doctor/setup"
+    if RESEND_API_KEY:
+        try:
+            resend.Emails.send({
+                "from": RESEND_FROM,
+                "to": [email],
+                "subject": f"You have been invited to join {hospital['name']} on Sukhya Med",
+                "html": f"""
+                <div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px;background:#fff;color:#0a2518">
+                  <div style="border-bottom:3px solid #1F8A4D;padding-bottom:16px;margin-bottom:24px">
+                    <span style="font-size:24px">Sukhya <span style="color:#1F8A4D;font-style:italic">Med</span></span>
+                  </div>
+                  <h2 style="font-weight:400;font-size:22px">You have been invited to Sukhya Med</h2>
+                  <p style="color:#4A6E59;font-size:14px;margin:16px 0">You have been added as a doctor at <strong>{hospital['name']}</strong>.</p>
+                  <table style="width:100%;border-collapse:collapse;background:#EEFBF3;border-radius:8px;overflow:hidden;margin-bottom:24px">
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59;width:40%">Email</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{email}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Temporary Password</td><td style="padding:10px 16px;font-size:13px;font-weight:600;font-family:monospace">{temp_pw}</td></tr>
+                    <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">Hospital</td><td style="padding:10px 16px;font-size:13px">{hospital['name']}</td></tr>
+                  </table>
+                  <a href="{invite_url}" style="display:inline-block;background:#1F8A4D;color:#fff;text-decoration:none;padding:12px 28px;border-radius:50px;font-size:14px;font-family:Arial">Complete your profile →</a>
+                  <p style="color:#999;font-size:11px;margin-top:24px">Please change your password after your first login. If you did not expect this invitation, ignore this email.</p>
+                  <div style="border-top:1px solid #D4F5E2;margin-top:32px;padding-top:16px;font-size:11px;color:#999">© {now_utc.year} Sukhya Med · sukhya.com</div>
+                </div>
+                """,
+            })
+        except Exception as e:
+            logger.warning("Invite email failed: %s", e)
+
+    await write_audit(user["id"], "doctor_invited", "user", uid, request, {"email": email, "hospital_id": hospital_id})
+    return {"invited": True, "email": email, "temp_password": temp_pw}
+
+
+@api.put("/doctor/profile/complete")
+async def complete_doctor_profile(req: DoctorProfileUpdate, request: Request, user: dict = Depends(require_role("doctor")), _csrf=Depends(verify_csrf)):
+    """Doctor completes their profile after first login."""
+    now_utc = datetime.now(timezone.utc)
+    update = {k: v for k, v in req.model_dump(exclude_none=True).items()}
+    update["updated_at"] = now_utc.isoformat()
+    update["profile_complete"] = True
+
+    # Update user's full_name too
+    if req.name:
+        await db.users.update_one({"id": user["id"]}, {"$set": {"full_name": req.name, "updated_at": now_utc.isoformat()}})
+
+    await db.doctors.update_one({"user_id": user["id"]}, {"$set": update})
+    await write_audit(user["id"], "doctor_profile_completed", "doctor", user["id"], request)
+    return {"profile_complete": True}
+
+
+@api.post("/doctor/mark-unavailable")
+async def doctor_mark_unavailable(req: dict, request: Request, user: dict = Depends(require_role("doctor")), _csrf=Depends(verify_csrf)):
+    """Doctor marks a date as unavailable (surgery/leave). Shifts affected patient bookings."""
+    date_str = req.get("date")
+    reason = req.get("reason", "Doctor unavailable")
+    if not date_str:
+        raise HTTPException(status_code=400, detail="date is required.")
+
+    now_utc = datetime.now(timezone.utc)
+    doctor = await db.doctors.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor profile not found.")
+
+    # Find all booked appointments for this doctor on this date
+    affected = await db.appointments.find({
+        "doctor_id": user["id"],
+        "date": date_str,
+        "status": "booked"
+    }, {"_id": 0}).to_list(100)
+
+    rebooked = []
+    cancelled_ids = []
+
+    for appt in affected:
+        # Try to find next available slot for same doctor (next 7 days)
+        new_slot = None
+        new_date = None
+        for days_ahead in range(1, 8):
+            try_date = (datetime.strptime(date_str, "%Y-%m-%d") + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+            avail = await doctor_slots(user["id"], try_date)
+            booked_slots = [a["time_slot"] async for a in db.appointments.find({
+                "doctor_id": user["id"], "date": try_date, "status": "booked"
+            })]
+            free = [s for s in avail["slots"] if s["time"] not in booked_slots]
+            if free:
+                new_slot = free[0]["time"]
+                new_date = try_date
+                break
+
+        if new_slot and new_date:
+            # Rebook to new slot
+            await db.appointments.update_one(
+                {"id": appt["id"]},
+                {"$set": {"date": new_date, "time_slot": new_slot, "updated_at": now_utc.isoformat(), "notes": f"Rescheduled: {reason}"}}
+            )
+            rebooked.append({"appt_id": appt["id"], "new_date": new_date, "new_slot": new_slot})
+
+            # Notify patient by email
+            if RESEND_API_KEY:
+                try:
+                    resend.Emails.send({
+                        "from": RESEND_FROM,
+                        "to": [appt["patient_email"]],
+                        "subject": f"Your appointment has been rescheduled — Sukhya Med",
+                        "html": f"""
+                        <div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px;background:#fff;color:#0a2518">
+                          <div style="border-bottom:3px solid #1F8A4D;padding-bottom:16px;margin-bottom:24px">
+                            <span style="font-size:24px">Sukhya <span style="color:#1F8A4D;font-style:italic">Med</span></span>
+                          </div>
+                          <h2 style="font-weight:400">Your appointment has been rescheduled</h2>
+                          <p style="color:#4A6E59;font-size:14px">Hi {appt['patient_name']}, your appointment with <strong>{doctor['name']}</strong> has been moved due to {reason.lower()}.</p>
+                          <table style="width:100%;border-collapse:collapse;background:#EEFBF3;border-radius:8px;overflow:hidden;margin:20px 0">
+                            <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">New Date</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{new_date}</td></tr>
+                            <tr><td style="padding:10px 16px;font-size:13px;color:#4A6E59">New Time</td><td style="padding:10px 16px;font-size:13px;font-weight:600">{new_slot}</td></tr>
+                          </table>
+                          <p style="color:#999;font-size:11px">We apologize for any inconvenience.</p>
+                        </div>
+                        """,
+                    })
+                except Exception as e:
+                    logger.warning("Reschedule email failed: %s", e)
+        else:
+            # No free slot found — cancel and notify
+            await db.appointments.update_one(
+                {"id": appt["id"]},
+                {"$set": {"status": "cancelled", "cancellation_reason": reason, "updated_at": now_utc.isoformat()}}
+            )
+            cancelled_ids.append(appt["id"])
+            if RESEND_API_KEY:
+                try:
+                    resend.Emails.send({
+                        "from": RESEND_FROM,
+                        "to": [appt["patient_email"]],
+                        "subject": f"Your appointment has been cancelled — Sukhya Med",
+                        "html": f"""
+                        <div style="font-family:Georgia,serif;max-width:520px;margin:0 auto;padding:40px;background:#fff;color:#0a2518">
+                          <h2>Your appointment was cancelled</h2>
+                          <p>Hi {appt['patient_name']}, unfortunately your appointment with <strong>{doctor['name']}</strong> on {date_str} at {appt['time_slot']} has been cancelled ({reason}). Please rebook at your convenience.</p>
+                          <a href="{os.environ.get('FRONTEND_URL')}/find-doctors" style="display:inline-block;background:#1F8A4D;color:#fff;text-decoration:none;padding:12px 28px;border-radius:50px;font-size:14px">Find another slot →</a>
+                        </div>
+                        """,
+                    })
+                except Exception as e:
+                    logger.warning("Cancel email failed: %s", e)
+
+    # Mark date as unavailable on doctor profile
+    unavailable_dates = doctor.get("unavailable_dates", [])
+    if date_str not in unavailable_dates:
+        unavailable_dates.append(date_str)
+    await db.doctors.update_one({"user_id": user["id"]}, {"$set": {"unavailable_dates": unavailable_dates, "updated_at": now_utc.isoformat()}})
+
+    await write_audit(user["id"], "doctor_marked_unavailable", "doctor", user["id"], request, {"date": date_str, "rebooked": len(rebooked), "cancelled": len(cancelled_ids)})
+    return {"date": date_str, "rebooked": rebooked, "cancelled": cancelled_ids}
+
+
+@api.delete("/doctor/mark-unavailable/{date_str}")
+async def doctor_remove_unavailable(date_str: str, request: Request, user: dict = Depends(require_role("doctor")), _csrf=Depends(verify_csrf)):
+    """Remove a date from doctor's unavailable list."""
+    doctor = await db.doctors.find_one({"user_id": user["id"]})
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor not found.")
+    unavailable_dates = [d for d in doctor.get("unavailable_dates", []) if d != date_str]
+    await db.doctors.update_one({"user_id": user["id"]}, {"$set": {"unavailable_dates": unavailable_dates}})
+    return {"removed": date_str}
 
 
 @api.post("/admin/hospitals")
