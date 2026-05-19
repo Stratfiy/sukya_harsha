@@ -61,6 +61,13 @@ export default function DoctorProfile() {
         if (!user) return nav("/login", { state: { from: `/doctors/${id}` } });
         if (user.role !== "patient") return setError("Only patients can book appointments.");
         if (!selectedSlot) return setError("Please pick a time slot.");
+
+        // Hard guard: re-check live appointments before submitting
+        const freshAppts = await api.get("/appointments").then(r => r.data).catch(() => existingAppts);
+        setExistingAppts(freshAppts);
+        const alreadyBooked = freshAppts.some(a => a.date === date && a.status === "booked");
+        if (alreadyBooked) return; // banner will show automatically
+
         setBooking(true);
         try {
             const { data } = await api.post("/appointments", {
@@ -70,8 +77,13 @@ export default function DoctorProfile() {
             });
             setSuccess(data);
             setSelectedSlot(null);
-            const r = await api.get(`/doctors/${id}/slots`, { params: { date } });
-            setSlotData(r.data);
+            // Refresh both slots AND appointments so the banner triggers immediately
+            const [slotsRes, apptsRes] = await Promise.all([
+                api.get(`/doctors/${id}/slots`, { params: { date } }),
+                api.get("/appointments"),
+            ]);
+            setSlotData(slotsRes.data);
+            setExistingAppts(apptsRes.data);
         } catch (e) {
             setError(formatApiError(e.response?.data?.detail));
         } finally {
