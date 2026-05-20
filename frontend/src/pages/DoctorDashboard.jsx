@@ -341,7 +341,11 @@ export default function DoctorDashboard() {
     const [error, setError] = useState("");
     const [activeTab, setActiveTab] = useState("today");
     const [prescribingFor, setPrescribingFor] = useState(null);
-    const [presForm, setPresForm] = useState({ diagnosis:"", medications:[{name:"",dosage:"",frequency:"",duration:""}], additional_notes:"" });
+    const [presForm, setPresForm] = useState({
+        diagnosis: "",
+        medications: [{ name:"", dosage:"", timing:[], food:"after", duration:"" }],
+        additional_notes: ""
+    });
     const [availSaved, setAvailSaved] = useState(false);
 
     const [toggling, setToggling] = useState(false);
@@ -399,15 +403,25 @@ export default function DoctorDashboard() {
     const submitPrescription = async () => {
         if (!prescribingFor) return;
         try {
+            const TIMING_LABELS = { M:"Morning", A:"Afternoon", E:"Evening", N:"Night" };
+            const formattedMeds = presForm.medications.filter(m => m.name).map(m => ({
+                name: m.name,
+                dosage: m.dosage,
+                frequency: m.timing.length > 0
+                    ? m.timing.map(t => TIMING_LABELS[t]).join(" + ")
+                    : "",
+                duration: m.duration,
+                food: m.food,
+            }));
             await api.post("/prescriptions", {
                 appointment_id: prescribingFor.id, patient_id: prescribingFor.patient_id,
                 diagnosis: presForm.diagnosis,
-                medications: presForm.medications.filter(m => m.name),
+                medications: formattedMeds,
                 additional_notes: presForm.additional_notes,
             });
             await markStatus(prescribingFor.id, "completed");
             setPrescribingFor(null);
-            setPresForm({ diagnosis:"", medications:[{name:"",dosage:"",frequency:"",duration:""}], additional_notes:"" });
+            setPresForm({ diagnosis:"", medications:[{name:"",dosage:"",timing:[],food:"after",duration:""}], additional_notes:"" });
         } catch(e) { setError(formatApiError(e.response?.data?.detail)); }
     };
 
@@ -716,87 +730,226 @@ export default function DoctorDashboard() {
 
             {/* ── PRESCRIPTION MODAL ── */}
             {prescribingFor && (
-                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/20 backdrop-blur-sm p-0 sm:p-4">
-                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xl max-h-[92vh] overflow-y-auto shadow-2xl border border-mint-100">
-                        {/* Header */}
-                        <div className="sticky top-0 bg-white border-b border-mint-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
-                            <div>
-                                <h3 className="editorial text-xl text-mint-800">Prescription</h3>
-                                <p className="text-xs text-mint-800/50 mt-0.5">
-                                    {prescribingFor.patient_name} · {new Date(prescribingFor.date+"T00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"})} at {prescribingFor.time_slot}
-                                </p>
-                            </div>
-                            <button onClick={()=>setPrescribingFor(null)} className="w-8 h-8 rounded-full bg-mint-50 hover:bg-mint-100 flex items-center justify-center transition"><X size={15}/></button>
+                <PrescriptionModal
+                    appt={prescribingFor}
+                    form={presForm}
+                    setForm={setPresForm}
+                    onClose={()=>setPrescribingFor(null)}
+                    onSubmit={submitPrescription}
+                />
+            )}
+        </div>
+    );
+}
+
+// ─── Prescription Modal ──────────────────────────────────────────────────────
+const COMMON_MEDS = [
+    "Paracetamol","Amoxicillin","Azithromycin","Metformin","Atorvastatin",
+    "Amlodipine","Omeprazole","Pantoprazole","Metronidazole","Ciprofloxacin",
+    "Doxycycline","Ibuprofen","Aspirin","Cetirizine","Levothyroxine",
+    "Enalapril","Losartan","Metoprolol","Clopidogrel","Vitamin D3",
+    "Vitamin B12","Folic Acid","Iron Sulphate","Calcium","Zinc",
+    "Ranitidine","Domperidone","Ondansetron","Loperamide","Albendazole",
+];
+const DOSAGES = ["125mg","250mg","500mg","1g","5mg","10mg","20mg","40mg","50mg","100mg","150mg","200mg","400mg","600mg","800mg"];
+const DURATIONS = ["3 days","5 days","7 days","10 days","14 days","30 days","SOS","Ongoing"];
+const TIMING_OPTS = [
+    { key:"M", label:"M", full:"Morning" },
+    { key:"A", label:"A", full:"Afternoon" },
+    { key:"E", label:"E", full:"Evening" },
+    { key:"N", label:"N", full:"Night" },
+];
+
+function MedicineCard({ med, idx, total, onChange, onDelete }) {
+    const [nameQuery, setNameQuery] = useState(med.name);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const suggestions = nameQuery.length >= 2
+        ? COMMON_MEDS.filter(m => m.toLowerCase().startsWith(nameQuery.toLowerCase())).slice(0, 6)
+        : [];
+
+    const toggleTiming = (key) => {
+        const cur = med.timing || [];
+        const ORDER = ["M","A","E","N"];
+        const next = cur.includes(key) ? cur.filter(k=>k!==key) : [...cur,key].sort((a,b)=>ORDER.indexOf(a)-ORDER.indexOf(b));
+        onChange("timing", next);
+    };
+
+    return (
+        <div className="rounded-2xl border border-mint-100 bg-white overflow-hidden shadow-sm">
+            {/* Card header */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-mint-50 to-white border-b border-mint-100">
+                <span className="text-xs font-bold text-mint-600 uppercase tracking-wider">Medicine {idx+1}</span>
+                {total > 1 && (
+                    <button onClick={onDelete} className="w-6 h-6 rounded-full bg-red-50 hover:bg-red-100 flex items-center justify-center transition">
+                        <X size={12} className="text-red-400"/>
+                    </button>
+                )}
+            </div>
+
+            <div className="p-4 space-y-3">
+                {/* Medicine name with autocomplete */}
+                <div className="relative">
+                    <input
+                        value={nameQuery}
+                        onChange={e => { setNameQuery(e.target.value); onChange("name", e.target.value); setShowSuggestions(true); }}
+                        onBlur={() => setTimeout(()=>setShowSuggestions(false), 150)}
+                        placeholder="Medicine name..."
+                        className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-2.5 text-sm font-medium text-mint-900 outline-none focus:ring-2 focus:ring-mint-400 focus:border-mint-400 placeholder:font-normal"/>
+                    {showSuggestions && suggestions.length > 0 && (
+                        <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white rounded-xl border border-mint-100 shadow-lg overflow-hidden">
+                            {suggestions.map(s => (
+                                <button key={s} onMouseDown={()=>{ setNameQuery(s); onChange("name",s); setShowSuggestions(false); }}
+                                    className="w-full text-left px-4 py-2.5 text-sm text-mint-800 hover:bg-mint-50 transition border-b border-mint-50 last:border-0">
+                                    {s}
+                                </button>
+                            ))}
                         </div>
+                    )}
+                </div>
 
-                        <div className="p-6 space-y-5">
-                            {/* Diagnosis */}
-                            <div>
-                                <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Diagnosis *</label>
-                                <input value={presForm.diagnosis} onChange={e=>setPresForm({...presForm,diagnosis:e.target.value})}
-                                    placeholder="e.g. Hypertension, Type 2 Diabetes"
-                                    className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500 focus:border-mint-400"/>
-                            </div>
-
-                            {/* Medications */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Medications *</label>
-                                    <button onClick={()=>setPresForm({...presForm,medications:[...presForm.medications,{name:"",dosage:"",frequency:"",duration:""}]})}
-                                        className="flex items-center gap-1 text-xs text-mint-600 hover:text-mint-800 font-medium transition">
-                                        <span className="text-base leading-none">+</span> Add medicine
-                                    </button>
-                                </div>
-                                <div className="space-y-3">
-                                    {presForm.medications.map((m,i) => (
-                                        <div key={i} className="rounded-2xl border border-mint-100 bg-mint-50/20 overflow-hidden">
-                                            <div className="flex items-center justify-between px-4 py-2 bg-mint-50/50 border-b border-mint-100">
-                                                <span className="text-xs font-semibold text-mint-600">Medicine {i+1}</span>
-                                                {presForm.medications.length > 1 && (
-                                                    <button onClick={()=>setPresForm({...presForm,medications:presForm.medications.filter((_,idx)=>idx!==i)})}
-                                                        className="text-red-400 hover:text-red-600 transition"><X size={13}/></button>
-                                                )}
-                                            </div>
-                                            <div className="p-3 grid grid-cols-2 gap-2">
-                                                <input placeholder="Medicine name" value={m.name}
-                                                    onChange={e=>{const a=[...presForm.medications];a[i].name=e.target.value;setPresForm({...presForm,medications:a});}}
-                                                    className="col-span-2 rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
-                                                <input placeholder="Dosage (e.g. 500mg)" value={m.dosage}
-                                                    onChange={e=>{const a=[...presForm.medications];a[i].dosage=e.target.value;setPresForm({...presForm,medications:a});}}
-                                                    className="rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
-                                                <input placeholder="Frequency (e.g. Twice daily)" value={m.frequency}
-                                                    onChange={e=>{const a=[...presForm.medications];a[i].frequency=e.target.value;setPresForm({...presForm,medications:a});}}
-                                                    className="rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
-                                                <input placeholder="Duration (e.g. 5 days)" value={m.duration}
-                                                    onChange={e=>{const a=[...presForm.medications];a[i].duration=e.target.value;setPresForm({...presForm,medications:a});}}
-                                                    className="col-span-2 rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Notes */}
-                            <div>
-                                <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Notes for patient</label>
-                                <textarea rows={3} value={presForm.additional_notes}
-                                    onChange={e=>setPresForm({...presForm,additional_notes:e.target.value})}
-                                    placeholder="Follow-up in 2 weeks. Avoid spicy food. Take medicines after meals..."
-                                    className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-3 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500"/>
-                            </div>
-                        </div>
-
-                        {/* Sticky footer */}
-                        <div className="sticky bottom-0 bg-white border-t border-mint-100 px-6 py-4">
-                            <button onClick={submitPrescription}
-                                disabled={!presForm.diagnosis || !presForm.medications[0]?.name}
-                                className="w-full flex items-center justify-center gap-2 bg-mint-600 hover:bg-mint-700 disabled:opacity-40 text-white font-semibold py-3.5 rounded-2xl text-sm transition">
-                                <FileText size={15}/> Issue prescription & complete appointment
+                {/* Dosage chips */}
+                <div>
+                    <p className="text-[10px] font-semibold text-mint-800/40 uppercase tracking-wider mb-1.5">Dosage</p>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                        {DOSAGES.map(d => (
+                            <button key={d} onClick={()=>onChange("dosage", med.dosage===d?"":d)}
+                                className={`px-2.5 py-1 rounded-full text-xs border transition font-medium
+                                    ${med.dosage===d ? "bg-mint-600 text-white border-mint-600" : "bg-white border-mint-200 text-mint-700 hover:border-mint-400"}`}>
+                                {d}
                             </button>
-                        </div>
+                        ))}
+                    </div>
+                    <input value={med.dosage} onChange={e=>onChange("dosage",e.target.value)}
+                        placeholder="Or type custom dosage..."
+                        className="w-full rounded-xl border border-mint-100 bg-mint-50/20 px-3 py-2 text-xs text-mint-800 outline-none focus:ring-1 focus:ring-mint-400"/>
+                </div>
+
+                {/* Timing: M A E N toggles */}
+                <div>
+                    <p className="text-[10px] font-semibold text-mint-800/40 uppercase tracking-wider mb-1.5">When to take</p>
+                    <div className="flex gap-2">
+                        {TIMING_OPTS.map(t => (
+                            <button key={t.key} onClick={()=>toggleTiming(t.key)}
+                                className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition
+                                    ${(med.timing||[]).includes(t.key)
+                                        ? "bg-mint-600 text-white border-mint-600 shadow-sm"
+                                        : "bg-white border-mint-200 text-mint-400 hover:border-mint-400 hover:text-mint-700"}`}>
+                                {t.label}
+                                <span className="block text-[8px] font-normal mt-0.5 opacity-70">{t.full}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {(med.timing||[]).length > 0 && (
+                        <p className="mt-1.5 text-xs text-mint-600 font-medium">
+                            {(med.timing||[]).length}× daily — {(med.timing||[]).map(k=>TIMING_OPTS.find(t=>t.key===k)?.full).join(", ")}
+                        </p>
+                    )}
+                </div>
+
+                {/* Before/After food */}
+                <div className="flex gap-2">
+                    {["before","after","with"].map(f => (
+                        <button key={f} onClick={()=>onChange("food",f)}
+                            className={`flex-1 py-1.5 rounded-xl text-xs border capitalize transition font-medium
+                                ${med.food===f ? "bg-mint-600 text-white border-mint-600" : "bg-white border-mint-200 text-mint-600 hover:border-mint-400"}`}>
+                            {f} food
+                        </button>
+                    ))}
+                </div>
+
+                {/* Duration chips */}
+                <div>
+                    <p className="text-[10px] font-semibold text-mint-800/40 uppercase tracking-wider mb-1.5">Duration</p>
+                    <div className="flex flex-wrap gap-1.5">
+                        {DURATIONS.map(d => (
+                            <button key={d} onClick={()=>onChange("duration", med.duration===d?"":d)}
+                                className={`px-3 py-1.5 rounded-full text-xs border transition font-medium
+                                    ${med.duration===d ? "bg-mint-600 text-white border-mint-600" : "bg-white border-mint-200 text-mint-700 hover:border-mint-400"}`}>
+                                {d}
+                            </button>
+                        ))}
                     </div>
                 </div>
-            )}
+            </div>
+        </div>
+    );
+}
+
+function PrescriptionModal({ appt, form, setForm, onClose, onSubmit }) {
+    const updateMed = (i, key, val) => {
+        const arr = [...form.medications];
+        arr[i] = { ...arr[i], [key]: val };
+        setForm({ ...form, medications: arr });
+    };
+    const addMed = () => setForm({ ...form, medications: [...form.medications, { name:"", dosage:"", timing:[], food:"after", duration:"" }] });
+    const removeMed = (i) => setForm({ ...form, medications: form.medications.filter((_,idx)=>idx!==i) });
+
+    const canSubmit = form.diagnosis && form.medications.some(m => m.name);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/25 backdrop-blur-sm p-0 sm:p-4">
+            <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg max-h-[94vh] flex flex-col shadow-2xl border border-mint-100">
+
+                {/* Sticky header */}
+                <div className="flex-shrink-0 flex items-center justify-between px-5 py-4 border-b border-mint-100 bg-white rounded-t-3xl">
+                    <div>
+                        <h3 className="font-bold text-mint-800 text-base">Prescription</h3>
+                        <p className="text-xs text-mint-800/50 mt-0.5">
+                            {appt.patient_name} · {new Date(appt.date+"T00:00").toLocaleDateString("en-IN",{day:"numeric",month:"short"})} · {appt.time_slot}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="w-8 h-8 rounded-full bg-mint-50 hover:bg-mint-100 flex items-center justify-center">
+                        <X size={15}/>
+                    </button>
+                </div>
+
+                {/* Scrollable body */}
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+
+                    {/* Diagnosis */}
+                    <div>
+                        <label className="block mb-1.5 text-[10px] font-bold text-mint-800/50 uppercase tracking-widest">Diagnosis / Chief complaint *</label>
+                        <input value={form.diagnosis} onChange={e=>setForm({...form,diagnosis:e.target.value})}
+                            placeholder="e.g. Viral fever, Hypertension, URTI..."
+                            className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"/>
+                    </div>
+
+                    {/* Medicine cards */}
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-[10px] font-bold text-mint-800/50 uppercase tracking-widest">Medications *</label>
+                            <button onClick={addMed}
+                                className="flex items-center gap-1.5 text-xs text-mint-600 hover:text-mint-800 font-semibold bg-mint-50 hover:bg-mint-100 px-3 py-1.5 rounded-full transition border border-mint-200">
+                                + Add medicine
+                            </button>
+                        </div>
+                        <div className="space-y-3">
+                            {form.medications.map((m,i) => (
+                                <MedicineCard key={i} med={m} idx={i} total={form.medications.length}
+                                    onChange={(k,v)=>updateMed(i,k,v)}
+                                    onDelete={()=>removeMed(i)}/>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                        <label className="block mb-1.5 text-[10px] font-bold text-mint-800/50 uppercase tracking-widest">Notes / Instructions</label>
+                        <textarea rows={2} value={form.additional_notes}
+                            onChange={e=>setForm({...form,additional_notes:e.target.value})}
+                            placeholder="Follow-up in 2 weeks. Avoid cold drinks. Rest advised..."
+                            className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500"/>
+                    </div>
+                </div>
+
+                {/* Sticky footer */}
+                <div className="flex-shrink-0 px-5 py-4 border-t border-mint-100 bg-white">
+                    <button onClick={onSubmit} disabled={!canSubmit}
+                        className="w-full flex items-center justify-center gap-2 bg-mint-600 hover:bg-mint-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3.5 rounded-2xl text-sm transition shadow-lg shadow-mint-600/20">
+                        <FileText size={15}/> Issue prescription & complete
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }
