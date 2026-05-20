@@ -829,6 +829,10 @@ async def doctor_slots(doctor_id: str, date: str):
         raise HTTPException(status_code=404, detail="Doctor not found")
     if date in (d.get("blocked_dates") or []):
         return {"date": date, "slots": []}
+    # If doctor marked unavailable today, return no slots for today
+    now_ist = (datetime.now(timezone.utc) + IST_OFFSET).strftime("%Y-%m-%d")
+    if date == now_ist and d.get("is_available_today") is False:
+        return {"date": date, "slots": [], "doctor_unavailable": True}
     try:
         target = datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
@@ -981,6 +985,14 @@ IST_OFFSET = timedelta(hours=5, minutes=30)
 async def book_appointment(req: AppointmentCreate, request: Request, user: dict = Depends(require_role("patient")), _csrf=Depends(verify_csrf)):
     now_utc = datetime.now(timezone.utc)
     now_ist = now_utc + IST_OFFSET
+
+    # 0a. Check doctor is available today
+    req_date_ist = req.date
+    now_ist_date = (datetime.now(timezone.utc) + IST_OFFSET).strftime("%Y-%m-%d")
+    if req_date_ist == now_ist_date:
+        booking_doctor = await db.doctors.find_one({"id": req.doctor_id}, {"is_available_today": 1})
+        if booking_doctor and booking_doctor.get("is_available_today") is False:
+            raise HTTPException(status_code=400, detail="This doctor is unavailable today. Please pick a different date.")
 
     # 0. 24-HOUR COOLDOWN — if patient booked anything in the last 24 hours, block
     cutoff_time = (now_utc - timedelta(hours=24)).isoformat()
