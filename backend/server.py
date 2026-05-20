@@ -18,6 +18,9 @@ import jwt
 import pyotp
 import qrcode
 import resend
+from PIL import Image
+import io
+import base64
 import httpx
 from cryptography.fernet import Fernet
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
@@ -1290,6 +1293,35 @@ async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: R
         raise HTTPException(status_code=404, detail="Doctor not found")
     await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
     return {"approved": False}
+
+
+@api.post("/doctor/upload-photo")
+async def upload_doctor_photo(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_role("doctor"))
+):
+    """Accept an image upload, resize to 400×400, return a base64 data URL."""
+    ALLOWED = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if file.content_type not in ALLOWED:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, or WebP images are allowed.")
+    MAX_SIZE = 5 * 1024 * 1024  # 5MB
+    raw = await file.read()
+    if len(raw) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        # Crop to square from centre
+        w, h = img.size
+        m = min(w, h)
+        img = img.crop(((w-m)//2, (h-m)//2, (w+m)//2, (h+m)//2))
+        img = img.resize((400, 400), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        data_url = f"data:image/jpeg;base64,{b64}"
+        return {"url": data_url}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not process image: {e}")
 
 
 @api.post("/doctor/toggle-availability")
