@@ -19,11 +19,9 @@ import pyotp
 import qrcode
 import resend
 from PIL import Image
-import io
-import base64
 import httpx
 from cryptography.fernet import Fernet
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
