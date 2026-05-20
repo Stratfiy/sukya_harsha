@@ -344,6 +344,9 @@ export default function DoctorDashboard() {
     const [presForm, setPresForm] = useState({ diagnosis:"", medications:[{name:"",dosage:"",frequency:"",duration:""}], additional_notes:"" });
     const [availSaved, setAvailSaved] = useState(false);
 
+    const [toggling, setToggling] = useState(false);
+    const [toggleResult, setToggleResult] = useState(null);
+
     const load = useCallback(async () => {
         try {
             const [p, a] = await Promise.all([api.get("/doctor/profile"), api.get("/appointments")]);
@@ -351,6 +354,20 @@ export default function DoctorDashboard() {
             setAppts(a.data);
         } catch(e) { setError(formatApiError(e.response?.data?.detail)); }
     }, []);
+
+    const toggleAvailability = async () => {
+        setToggling(true);
+        setToggleResult(null);
+        try {
+            const { data } = await api.post("/doctor/toggle-availability", {});
+            setProfile(p => ({ ...p, is_available_today: data.is_available_today }));
+            setToggleResult(data);
+            if (data.is_available_today) {
+                await load(); // refresh appointments after going available
+            }
+        } catch(e) { setError(formatApiError(e.response?.data?.detail)); }
+        finally { setToggling(false); }
+    };
 
     useEffect(() => { load(); }, [load]);
 
@@ -567,23 +584,52 @@ export default function DoctorDashboard() {
                             )}
                         </div>
 
-                        {/* Online & Calendar settings inline */}
+                        {/* Availability Toggle + Calendar */}
                         <div className="grid sm:grid-cols-2 gap-4">
-                            <div className="glass rounded-2xl p-5">
-                                <div className="flex items-center gap-2 mb-1"><Video size={15} className="text-mint-600"/><h3 className="editorial text-lg text-mint-800">Online consultation</h3></div>
-                                <p className="text-xs text-mint-800/50 mb-3">Let patients book video consultations.</p>
-                                <button onClick={()=>updateProfile({online_consultation_enabled:!profile.online_consultation_enabled})}
-                                    className={`btn-pill text-xs py-2 ${profile.online_consultation_enabled?"btn-primary":"btn-ghost"}`}>
-                                    {profile.online_consultation_enabled?"✓ Online enabled":"Enable online"}
+                            {/* Doctor availability toggle */}
+                            <div className={`rounded-2xl p-5 border-2 transition-all ${profile.is_available_today === false ? "bg-red-50 border-red-200" : "glass border-mint-200"}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <div className={`w-2.5 h-2.5 rounded-full ${profile.is_available_today === false ? "bg-red-400" : "bg-mint-500 animate-pulse"}`}/>
+                                            <h3 className="editorial text-lg text-mint-800">Availability</h3>
+                                        </div>
+                                        <p className={`text-xs mb-3 ${profile.is_available_today === false ? "text-red-600/70" : "text-mint-800/50"}`}>
+                                            {profile.is_available_today === false
+                                                ? "You are marked unavailable today. Patients have been notified."
+                                                : "You are available. Patients can book your slots."}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button onClick={toggleAvailability} disabled={toggling}
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition border disabled:opacity-50
+                                        ${profile.is_available_today === false
+                                            ? "bg-white border-mint-200 text-mint-700 hover:bg-mint-50"
+                                            : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100"}`}>
+                                    {toggling
+                                        ? <><RefreshCw size={13} className="animate-spin"/> Updating…</>
+                                        : profile.is_available_today === false
+                                            ? "Mark as available"
+                                            : "Mark as unavailable today"
+                                    }
                                 </button>
+                                {toggleResult && toggleResult.affected_count > 0 && (
+                                    <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                                        ✉ {toggleResult.affected_count} patient{toggleResult.affected_count!==1?"s":""} notified and{" "}
+                                        {toggleResult.affected_patients?.filter(p=>p.rescheduled).length > 0
+                                            ? "rescheduled to next available slot"
+                                            : "asked to rebook"}
+                                    </p>
+                                )}
                             </div>
                             <div className="glass rounded-2xl p-5">
                                 <div className="flex items-center gap-2 mb-1"><Calendar size={15} className="text-mint-600"/><h3 className="editorial text-lg text-mint-800">Google Calendar</h3></div>
                                 <p className="text-xs text-mint-800/50 mb-3">Auto-sync appointments to your calendar.</p>
-                                <button onClick={async()=>{const{data}=await api.get("/doctor/google-calendar/auth-url");if(data.url)window.location.href=data.url;else alert("Not configured yet.");}}
+                                <button onClick={async()=>{try{const{data}=await api.get("/doctor/google-calendar/auth-url");if(data.url)window.location.href=data.url;else alert("Calendar not configured on server yet.");}catch{}}}
                                     className="btn-pill btn-ghost text-xs py-2">
                                     <RefreshCw size={12}/> {profile.google_calendar_connected?"Reconnect":"Connect Calendar"}
                                 </button>
+                                {profile.google_calendar_connected && <p className="mt-2 text-xs text-mint-600">✓ Connected</p>}
                             </div>
                         </div>
                     </div>
@@ -670,38 +716,82 @@ export default function DoctorDashboard() {
 
             {/* ── PRESCRIPTION MODAL ── */}
             {prescribingFor && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-mint-800/30 backdrop-blur-sm p-4">
-                    <div className="glass-mint rounded-3xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="flex items-center justify-between mb-1">
-                            <h3 className="editorial text-2xl text-mint-800">Issue Prescription</h3>
-                            <button onClick={()=>setPrescribingFor(null)} className="p-1.5 rounded-xl hover:bg-mint-100"><X size={16}/></button>
-                        </div>
-                        <p className="text-sm text-mint-800/60 mb-5">For <strong>{prescribingFor.patient_name}</strong> · {prescribingFor.date} at {prescribingFor.time_slot}</p>
-                        <div className="space-y-4">
-                            <Field label="Diagnosis">
-                                <input value={presForm.diagnosis} onChange={e=>setPresForm({...presForm,diagnosis:e.target.value})} placeholder="Primary diagnosis"
-                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500"/>
-                            </Field>
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/20 backdrop-blur-sm p-0 sm:p-4">
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-xl max-h-[92vh] overflow-y-auto shadow-2xl border border-mint-100">
+                        {/* Header */}
+                        <div className="sticky top-0 bg-white border-b border-mint-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
                             <div>
-                                <label className="block mb-2 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Medications</label>
-                                {presForm.medications.map((m,i) => (
-                                    <div key={i} className="grid grid-cols-2 gap-2 mb-3 p-3 rounded-xl bg-white/60 border border-mint-100">
-                                        <input placeholder="Medicine name" value={m.name} onChange={e=>{const a=[...presForm.medications];a[i].name=e.target.value;setPresForm({...presForm,medications:a});}} className="col-span-2 rounded-lg border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-mint-400"/>
-                                        <input placeholder="Dosage e.g. 500mg" value={m.dosage} onChange={e=>{const a=[...presForm.medications];a[i].dosage=e.target.value;setPresForm({...presForm,medications:a});}} className="rounded-lg border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-mint-400"/>
-                                        <input placeholder="Frequency e.g. 2×/day" value={m.frequency} onChange={e=>{const a=[...presForm.medications];a[i].frequency=e.target.value;setPresForm({...presForm,medications:a});}} className="rounded-lg border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-mint-400"/>
-                                        <input placeholder="Duration e.g. 7 days" value={m.duration} onChange={e=>{const a=[...presForm.medications];a[i].duration=e.target.value;setPresForm({...presForm,medications:a});}} className="col-span-2 rounded-lg border border-mint-100 bg-white/80 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-mint-400"/>
-                                    </div>
-                                ))}
-                                <button onClick={()=>setPresForm({...presForm,medications:[...presForm.medications,{name:"",dosage:"",frequency:"",duration:""}]})} className="text-xs text-mint-600 hover:underline">+ Add medication</button>
+                                <h3 className="editorial text-xl text-mint-800">Prescription</h3>
+                                <p className="text-xs text-mint-800/50 mt-0.5">
+                                    {prescribingFor.patient_name} · {new Date(prescribingFor.date+"T00:00").toLocaleDateString(undefined,{day:"numeric",month:"short"})} at {prescribingFor.time_slot}
+                                </p>
                             </div>
-                            <Field label="Notes for patient">
-                                <textarea rows={2} value={presForm.additional_notes} onChange={e=>setPresForm({...presForm,additional_notes:e.target.value})}
-                                    placeholder="Dietary instructions, follow-up date, etc."
-                                    className="w-full rounded-xl border border-mint-100 bg-white/80 px-4 py-3 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500"/>
-                            </Field>
-                            <button onClick={submitPrescription} disabled={!presForm.diagnosis||!presForm.medications[0]?.name}
-                                className="btn-pill btn-primary w-full justify-center disabled:opacity-40">
-                                <FileText size={14}/> Issue & mark complete
+                            <button onClick={()=>setPrescribingFor(null)} className="w-8 h-8 rounded-full bg-mint-50 hover:bg-mint-100 flex items-center justify-center transition"><X size={15}/></button>
+                        </div>
+
+                        <div className="p-6 space-y-5">
+                            {/* Diagnosis */}
+                            <div>
+                                <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Diagnosis *</label>
+                                <input value={presForm.diagnosis} onChange={e=>setPresForm({...presForm,diagnosis:e.target.value})}
+                                    placeholder="e.g. Hypertension, Type 2 Diabetes"
+                                    className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-mint-500 focus:border-mint-400"/>
+                            </div>
+
+                            {/* Medications */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Medications *</label>
+                                    <button onClick={()=>setPresForm({...presForm,medications:[...presForm.medications,{name:"",dosage:"",frequency:"",duration:""}]})}
+                                        className="flex items-center gap-1 text-xs text-mint-600 hover:text-mint-800 font-medium transition">
+                                        <span className="text-base leading-none">+</span> Add medicine
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {presForm.medications.map((m,i) => (
+                                        <div key={i} className="rounded-2xl border border-mint-100 bg-mint-50/20 overflow-hidden">
+                                            <div className="flex items-center justify-between px-4 py-2 bg-mint-50/50 border-b border-mint-100">
+                                                <span className="text-xs font-semibold text-mint-600">Medicine {i+1}</span>
+                                                {presForm.medications.length > 1 && (
+                                                    <button onClick={()=>setPresForm({...presForm,medications:presForm.medications.filter((_,idx)=>idx!==i)})}
+                                                        className="text-red-400 hover:text-red-600 transition"><X size={13}/></button>
+                                                )}
+                                            </div>
+                                            <div className="p-3 grid grid-cols-2 gap-2">
+                                                <input placeholder="Medicine name" value={m.name}
+                                                    onChange={e=>{const a=[...presForm.medications];a[i].name=e.target.value;setPresForm({...presForm,medications:a});}}
+                                                    className="col-span-2 rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
+                                                <input placeholder="Dosage (e.g. 500mg)" value={m.dosage}
+                                                    onChange={e=>{const a=[...presForm.medications];a[i].dosage=e.target.value;setPresForm({...presForm,medications:a});}}
+                                                    className="rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
+                                                <input placeholder="Frequency (e.g. Twice daily)" value={m.frequency}
+                                                    onChange={e=>{const a=[...presForm.medications];a[i].frequency=e.target.value;setPresForm({...presForm,medications:a});}}
+                                                    className="rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
+                                                <input placeholder="Duration (e.g. 5 days)" value={m.duration}
+                                                    onChange={e=>{const a=[...presForm.medications];a[i].duration=e.target.value;setPresForm({...presForm,medications:a});}}
+                                                    className="col-span-2 rounded-xl border border-mint-100 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Notes */}
+                            <div>
+                                <label className="block mb-1.5 text-xs font-semibold text-mint-800/50 uppercase tracking-wider">Notes for patient</label>
+                                <textarea rows={3} value={presForm.additional_notes}
+                                    onChange={e=>setPresForm({...presForm,additional_notes:e.target.value})}
+                                    placeholder="Follow-up in 2 weeks. Avoid spicy food. Take medicines after meals..."
+                                    className="w-full rounded-xl border border-mint-200 bg-mint-50/30 px-4 py-3 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500"/>
+                            </div>
+                        </div>
+
+                        {/* Sticky footer */}
+                        <div className="sticky bottom-0 bg-white border-t border-mint-100 px-6 py-4">
+                            <button onClick={submitPrescription}
+                                disabled={!presForm.diagnosis || !presForm.medications[0]?.name}
+                                className="w-full flex items-center justify-center gap-2 bg-mint-600 hover:bg-mint-700 disabled:opacity-40 text-white font-semibold py-3.5 rounded-2xl text-sm transition">
+                                <FileText size={15}/> Issue prescription & complete appointment
                             </button>
                         </div>
                     </div>
@@ -712,62 +802,134 @@ export default function DoctorDashboard() {
 }
 
 // ─── Availability Editor ─────────────────────────────────────────────────────
+const QUICK_PRESETS = [
+    { label: "Morning", start: "09:00", end: "13:00" },
+    { label: "Afternoon", start: "13:00", end: "17:00" },
+    { label: "Full day", start: "09:00", end: "17:00" },
+    { label: "Evening", start: "17:00", end: "21:00" },
+];
+
 function AvailabilityEditor({ availability, onChange }) {
     const [local, setLocal] = useState(availability);
     const [hasChanges, setHasChanges] = useState(false);
+    const [saving, setSaving] = useState(false);
     useEffect(() => { setLocal(availability); setHasChanges(false); }, [availability]);
 
-    const addRow = (day) => { setLocal(l=>[...l,{day_of_week:day,start_time:"09:00",end_time:"17:00",mode:"both",slot_minutes:30}]); setHasChanges(true); };
-    const removeRow = (i) => { setLocal(l=>l.filter((_,idx)=>idx!==i)); setHasChanges(true); };
-    const setField = (i,k,v) => { setLocal(l=>{const a=[...l];a[i]={...a[i],[k]:v};return a;}); setHasChanges(true); };
+    const addRow = (day, preset) => {
+        const row = preset
+            ? { day_of_week: day, start_time: preset.start, end_time: preset.end, mode: "offline", slot_minutes: 30 }
+            : { day_of_week: day, start_time: "09:00", end_time: "17:00", mode: "offline", slot_minutes: 30 };
+        setLocal(l => [...l, row]);
+        setHasChanges(true);
+    };
+    const removeRow = (i) => { setLocal(l => l.filter((_, idx) => idx !== i)); setHasChanges(true); };
+    const setField = (i, k, v) => { setLocal(l => { const a = [...l]; a[i] = { ...a[i], [k]: v }; return a; }); setHasChanges(true); };
+
+    const handleSave = async () => {
+        setSaving(true);
+        await onChange(local);
+        setHasChanges(false);
+        setSaving(false);
+    };
+
+    // Quick-toggle: check/uncheck an entire day using Full day preset
+    const toggleDay = (dIdx) => {
+        const hasRows = local.some(r => r.day_of_week === dIdx);
+        if (hasRows) {
+            setLocal(l => l.filter(r => r.day_of_week !== dIdx));
+        } else {
+            setLocal(l => [...l, { day_of_week: dIdx, start_time: "09:00", end_time: "17:00", mode: "offline", slot_minutes: 30 }]);
+        }
+        setHasChanges(true);
+    };
 
     return (
-        <div className="space-y-2">
-            {DAYS.map((dn,dIdx) => {
-                const rows = local.map((r,i)=>({...r,_i:i})).filter(r=>r.day_of_week===dIdx);
-                return (
-                    <div key={dn} className={`rounded-xl border p-3 transition ${rows.length>0?"bg-mint-50/40 border-mint-100":"bg-white/40 border-mint-50"}`}>
-                        <div className="flex items-center gap-3">
-                            <p className={`text-sm font-bold w-10 ${rows.length>0?"text-mint-800":"text-mint-800/30"}`}>{dn}</p>
-                            {rows.length === 0
-                                ? <span className="flex-1 text-xs text-mint-800/30 italic">— day off —</span>
-                                : <div className="flex-1 space-y-2">
-                                    {rows.map(r => (
-                                        <div key={r._i} className="flex flex-wrap items-center gap-2">
-                                            <input type="time" value={r.start_time} onChange={e=>setField(r._i,"start_time",e.target.value)}
-                                                className="rounded-lg border border-mint-200 bg-white px-2.5 py-1.5 text-sm text-mint-800"/>
-                                            <span className="text-xs text-mint-400">to</span>
-                                            <input type="time" value={r.end_time} onChange={e=>setField(r._i,"end_time",e.target.value)}
-                                                className="rounded-lg border border-mint-200 bg-white px-2.5 py-1.5 text-sm text-mint-800"/>
-                                            <select value={r.mode} onChange={e=>setField(r._i,"mode",e.target.value)}
-                                                className="rounded-lg border border-mint-200 bg-white px-2.5 py-1.5 text-xs text-mint-800">
-                                                <option value="both">Both</option>
-                                                <option value="offline">In-person</option>
-                                                <option value="online">Online</option>
-                                            </select>
-                                            <select value={r.slot_minutes||30} onChange={e=>setField(r._i,"slot_minutes",Number(e.target.value))}
-                                                className="rounded-lg border border-mint-200 bg-white px-2.5 py-1.5 text-xs text-mint-800">
-                                                <option value={15}>15 min</option>
-                                                <option value={20}>20 min</option>
-                                                <option value={30}>30 min</option>
-                                                <option value={45}>45 min</option>
-                                                <option value={60}>60 min</option>
-                                            </select>
-                                            <button onClick={()=>removeRow(r._i)} className="text-red-400 hover:text-red-600 transition"><X size={14}/></button>
-                                        </div>
+        <div>
+            {/* Quick day toggles */}
+            <div className="flex flex-wrap gap-2 mb-4">
+                {DAYS.map((dn, dIdx) => {
+                    const active = local.some(r => r.day_of_week === dIdx);
+                    return (
+                        <button key={dn} onClick={() => toggleDay(dIdx)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition
+                                ${active ? "bg-mint-600 text-white border-mint-600" : "bg-white/70 border-mint-200 text-mint-800/50 hover:border-mint-400"}`}>
+                            {dn}
+                        </button>
+                    );
+                })}
+                <span className="text-xs text-mint-800/30 self-center ml-1">Click day to toggle on/off</span>
+            </div>
+
+            {/* Per-day rows */}
+            <div className="space-y-2">
+                {DAYS.map((dn, dIdx) => {
+                    const rows = local.map((r, i) => ({ ...r, _i: i })).filter(r => r.day_of_week === dIdx);
+                    if (rows.length === 0) return null;
+                    return (
+                        <div key={dn} className="rounded-2xl bg-mint-50/40 border border-mint-100 overflow-hidden">
+                            <div className="flex items-center gap-3 px-4 py-2 bg-mint-50 border-b border-mint-100">
+                                <p className="text-sm font-bold text-mint-700 w-8">{dn}</p>
+                                {/* Quick preset buttons */}
+                                <div className="flex gap-1.5 flex-wrap">
+                                    {QUICK_PRESETS.map(p => (
+                                        <button key={p.label} onClick={() => {
+                                            // Remove all rows for this day and add the preset
+                                            const idxs = local.map((r,i)=>({...r,_i:i})).filter(r=>r.day_of_week===dIdx).map(r=>r._i);
+                                            setLocal(l => {
+                                                const filtered = l.filter((_,i)=>!idxs.includes(i));
+                                                return [...filtered, {day_of_week:dIdx,start_time:p.start,end_time:p.end,mode:"offline",slot_minutes:30}];
+                                            });
+                                            setHasChanges(true);
+                                        }}
+                                            className={`text-[10px] px-2 py-0.5 rounded-full border transition
+                                                ${rows[0]?.start_time===p.start&&rows[0]?.end_time===p.end&&rows.length===1
+                                                    ?"bg-mint-600 text-white border-mint-600"
+                                                    :"bg-white border-mint-200 text-mint-600 hover:border-mint-400"}`}>
+                                            {p.label}
+                                        </button>
                                     ))}
                                 </div>
-                            }
-                            <button onClick={()=>addRow(dIdx)} className="text-xs text-mint-600 hover:text-mint-800 font-medium ml-auto flex-shrink-0">+ Add</button>
+                                <button onClick={() => toggleDay(dIdx)} className="ml-auto text-red-400 hover:text-red-600 transition text-xs">Remove</button>
+                            </div>
+                            <div className="px-4 py-3 space-y-2">
+                                {rows.map(r => (
+                                    <div key={r._i} className="flex flex-wrap items-center gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <input type="time" value={r.start_time} onChange={e => setField(r._i, "start_time", e.target.value)}
+                                                className="rounded-xl border border-mint-200 bg-white px-3 py-2 text-sm text-mint-800 outline-none focus:ring-2 focus:ring-mint-400"/>
+                                            <span className="text-xs text-mint-400 font-medium">to</span>
+                                            <input type="time" value={r.end_time} onChange={e => setField(r._i, "end_time", e.target.value)}
+                                                className="rounded-xl border border-mint-200 bg-white px-3 py-2 text-sm text-mint-800 outline-none focus:ring-2 focus:ring-mint-400"/>
+                                        </div>
+                                        {rows.length > 1 && (
+                                            <button onClick={() => removeRow(r._i)} className="text-red-400 hover:text-red-600 transition text-xs ml-auto">
+                                                <X size={14}/>
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                                <button onClick={() => addRow(dIdx)} className="text-xs text-mint-600 hover:underline">+ Add another time block</button>
+                            </div>
                         </div>
-                    </div>
-                );
-            })}
-            <button onClick={()=>onChange(local)} disabled={!hasChanges}
-                className="btn-pill btn-primary text-sm mt-3 disabled:opacity-40">
-                <Check size={14}/> Save availability
-            </button>
-            {!hasChanges && local.length > 0 && <p className="text-xs text-mint-800/40 mt-1">Make changes above to enable save.</p>}
+                    );
+                })}
+            </div>
+
+            {local.length === 0 && (
+                <div className="py-8 text-center rounded-2xl border border-dashed border-mint-200 mt-2">
+                    <p className="text-sm text-mint-800/40">No availability set.</p>
+                    <p className="text-xs text-mint-800/30 mt-1">Click the day buttons above to add working days.</p>
+                </div>
+            )}
+
+            <div className="mt-4 flex items-center gap-3">
+                <button onClick={handleSave} disabled={!hasChanges || saving}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-mint-600 hover:bg-mint-700 disabled:opacity-40 text-white text-sm font-semibold transition">
+                    {saving ? <><RefreshCw size={13} className="animate-spin"/> Saving…</> : <><Check size={14}/> Save availability</>}
+                </button>
+                {!hasChanges && local.length > 0 && <p className="text-xs text-mint-800/40">All changes saved.</p>}
+                {hasChanges && <p className="text-xs text-amber-600">Unsaved changes</p>}
+            </div>
         </div>
     );
 }
