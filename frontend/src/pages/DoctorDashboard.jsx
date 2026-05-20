@@ -554,7 +554,7 @@ export default function DoctorDashboard() {
                                                             {a.status.replace("_"," ")}
                                                         </span>
                                                     </div>
-                                                    <p className="text-xs text-mint-800/50 mt-0.5 capitalize">{a.consultation_type} consultation{a.reason?` · "${a.reason}":""}</p>
+                                                    <p className="text-xs text-mint-800/50 mt-0.5 capitalize">{a.consultation_type} consultation{a.reason ? ` · "${a.reason}"` : ""}</p>
                                                 </div>
                                                 {a.status === "booked" && (
                                                     <div className="flex flex-wrap items-center gap-2">
