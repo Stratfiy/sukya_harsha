@@ -24,6 +24,46 @@ function readCookie(name) {
     return match ? decodeURIComponent(match[2]) : null;
 }
 
+// Auto-refresh: if any request gets 401, try /auth/refresh once then retry
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error) => {
+    failedQueue.forEach(({ resolve, reject }) => error ? reject(error) : resolve());
+    failedQueue = [];
+};
+
+api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const original = error.config;
+        // If 401 and not already retrying and not the refresh/login endpoint itself
+        if (error.response?.status === 401 && !original._retry &&
+            !original.url?.includes("/auth/refresh") && !original.url?.includes("/auth/login")) {
+            if (isRefreshing) {
+                return new Promise((resolve, reject) => {
+                    failedQueue.push({ resolve, reject });
+                }).then(() => api(original)).catch(e => Promise.reject(e));
+            }
+            original._retry = true;
+            isRefreshing = true;
+            try {
+                await api.post("/auth/refresh");
+                processQueue(null);
+                return api(original);
+            } catch (refreshError) {
+                processQueue(refreshError);
+                // Refresh failed — clear user state by reloading
+                window.location.href = "/login";
+                return Promise.reject(refreshError);
+            } finally {
+                isRefreshing = false;
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export function formatApiError(detail) {
     if (detail == null) return "Something went wrong. Please try again.";
     if (typeof detail === "string") return detail;
