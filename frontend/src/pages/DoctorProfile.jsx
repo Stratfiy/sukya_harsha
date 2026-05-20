@@ -151,9 +151,19 @@ export default function DoctorProfile() {
 
             {/* Slots */}
             {visibleSlots.length === 0 ? (
+                slotData.doctor_unavailable ? (
+                    <div className="mt-4 rounded-2xl bg-red-50 border border-red-100 px-4 py-3 flex items-start gap-3" data-testid="no-slots">
+                        <span className="text-red-400 mt-0.5 flex-shrink-0">⚠</span>
+                        <div>
+                            <p className="text-sm font-semibold text-red-700">Doctor unavailable today</p>
+                            <p className="text-xs text-red-600/70 mt-0.5">This doctor has marked themselves as unavailable for today. Please select a different date.</p>
+                        </div>
+                    </div>
+                ) : (
                 <p className="mt-4 text-sm text-mint-800/60" data-testid="no-slots">
                     No slots available on this day. Try another date.
                 </p>
+                )
             ) : (
                 <div className="mt-4 grid grid-cols-4 lg:flex lg:flex-wrap gap-2" data-testid="slot-grid">
                     {visibleSlots.map((s) => {
