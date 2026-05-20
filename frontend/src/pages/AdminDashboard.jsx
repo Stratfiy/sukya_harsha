@@ -4,7 +4,7 @@ import api, { formatApiError } from "../lib/api";
 import {
     Users, Stethoscope, Calendar, IndianRupee, CheckCircle2, XCircle,
     Building, Plus, Trash2, AlertCircle, Clock, Activity,
-    TrendingUp, UserCheck, UserX, RefreshCw, Mail, Send, ChevronDown, Eye, EyeOff
+    TrendingUp, UserCheck, UserX, RefreshCw, Mail, Send, ChevronDown, Eye, EyeOff, Upload
 } from "lucide-react";
 
 const SPECIALTIES = [
@@ -573,6 +573,56 @@ function InviteDoctor({ hospitals, onInvited }) {
     );
 }
 
+function HospitalImageUploader({ value, onChange }) {
+    const [uploading, setUploading] = useState(false);
+    const [err, setErr] = useState("");
+
+    const handleFile = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { setErr("Max 5MB"); return; }
+        setUploading(true); setErr("");
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/admin/upload-hospital-image`, {
+                method: "POST", credentials: "include", body: fd,
+            });
+            if (!res.ok) { const d = await res.json(); throw new Error(d.detail || "Upload failed"); }
+            const { url } = await res.json();
+            onChange(url);
+        } catch(e) { setErr(e.message); }
+        finally { setUploading(false); }
+    };
+
+    return (
+        <div className="sm:col-span-2 space-y-2">
+            <div className="flex items-center gap-3">
+                <div className="w-24 h-14 rounded-xl bg-mint-50 border border-mint-100 flex-shrink-0 overflow-hidden">
+                    {value
+                        ? <img src={value} alt="Preview" className="w-full h-full object-cover" onError={e=>e.target.style.display="none"}/>
+                        : <div className="w-full h-full flex items-center justify-center text-mint-300 text-xs">No image</div>}
+                </div>
+                <div className="flex-1">
+                    <label className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border text-sm font-medium transition
+                        ${uploading ? "bg-mint-50 text-mint-400 border-mint-100 cursor-wait" : "bg-white border-mint-200 text-mint-700 hover:bg-mint-50 hover:border-mint-400"}`}>
+                        {uploading ? <><RefreshCw size={13} className="animate-spin"/> Uploading…</> : <><Upload size={13}/> Upload hospital photo</>}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} disabled={uploading}/>
+                    </label>
+                    <p className="text-xs text-mint-800/40 mt-1">JPG, PNG · 16:9 ratio recommended · max 5MB</p>
+                </div>
+            </div>
+            {err && <p className="text-xs text-red-600">{err}</p>}
+            <div>
+                <p className="text-xs text-mint-800/40 mb-1">Or paste image URL</p>
+                <input value={!value?.startsWith("data:") ? value : ""} onChange={e=>onChange(e.target.value)}
+                    placeholder="https://example.com/hospital.jpg"
+                    className="w-full px-3 py-2 rounded-xl border border-mint-100 bg-white/80 text-sm outline-none focus:ring-2 focus:ring-mint-400"/>
+            </div>
+        </div>
+    );
+}
+
 function HospitalAdmin({ hospitals, reload }) {
     const [showAdd, setShowAdd] = useState(false);
     const [form, setForm] = useState({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
@@ -615,10 +665,11 @@ function HospitalAdmin({ hospitals, reload }) {
                 {showAdd && (
                     <div className="mb-6 rounded-2xl bg-white/60 border border-mint-100 p-5 grid sm:grid-cols-2 gap-3" data-testid="hospital-form">
                         <p className="sm:col-span-2 text-xs font-semibold text-mint-600 uppercase tracking-wider">New hospital details</p>
-                        {[["name","Name *"],["phone","Phone"],["address","Address"],["area","Area *"],["city","City *"],["state","State"],["pin_code","Pin code"],["image_url","Image URL"]].map(([k,p]) => (
+                        {[["name","Name *"],["phone","Phone"],["address","Address"],["area","Area *"],["city","City *"],["state","State"],["pin_code","Pin code"]].map(([k,p]) => (
                             <input key={k} placeholder={p} value={form[k]} onChange={e => setForm({...form,[k]:e.target.value})}
-                                className={`rounded-xl border border-mint-100 bg-white/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 ${k==="address"||k==="image_url"?"sm:col-span-2":""}`} />
+                                className={`rounded-xl border border-mint-100 bg-white/80 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-mint-500 ${k==="address"?"sm:col-span-2":""}`} />
                         ))}
+                        <HospitalImageUploader value={form.image_url} onChange={v => setForm({...form, image_url: v})} />
                         <textarea placeholder="Description" rows={2} value={form.description} onChange={e => setForm({...form,description:e.target.value})}
                             className="sm:col-span-2 rounded-xl border border-mint-100 bg-white/80 px-3 py-2.5 text-sm resize-none outline-none focus:ring-2 focus:ring-mint-500" />
                         <div className="sm:col-span-2">
