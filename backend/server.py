@@ -1100,6 +1100,75 @@ async def book_appointment(req: AppointmentCreate, request: Request, user: dict 
             appt["google_calendar_event_id"] = ev_id
 
     await write_audit(user["id"], "appointment_booked", "appointment", appt_id, request, {"doctor_id": req.doctor_id, "date": req.date})
+
+    # Send confirmation email to patient
+    if RESEND_API_KEY and not RESEND_API_KEY.startswith("re_REPLACE"):
+        appt_date_fmt = datetime.strptime(req.date, "%Y-%m-%d").strftime("%d %B %Y")
+        patient_html = f"""
+        <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#f5faf7;">
+          <div style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(31,138,77,0.08);">
+            <div style="background:linear-gradient(135deg,#1F8A4D,#2ECC71);padding:28px 32px;">
+              <h1 style="margin:0;font-family:Georgia,serif;color:#fff;font-size:24px;font-weight:400;">Sukhya <em>Med</em></h1>
+            </div>
+            <div style="padding:32px;">
+              <h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:400;color:#0a2518;font-size:22px;">Appointment Confirmed ✓</h2>
+              <p style="color:#4A6E59;margin:0 0 24px;font-size:14px;">Hi {appt["patient_name"]}, your appointment has been booked successfully.</p>
+              <div style="background:#EEFBF3;border-radius:14px;border:1px solid #D4F5E2;padding:24px 28px;margin-bottom:24px;">
+                <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                  <tr><td style="color:#4A6E59;padding:7px 0;">Doctor</td><td style="text-align:right;font-weight:600;color:#0a2518;">Dr. {doctor["name"]}</td></tr>
+                  <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:7px 0;">Specialization</td><td style="text-align:right;color:#0a2518;">{doctor["specialization"]}</td></tr>
+                  <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:7px 0;">Date</td><td style="text-align:right;font-weight:600;color:#1F8A4D;">{appt_date_fmt}</td></tr>
+                  <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:7px 0;">Time</td><td style="text-align:right;font-weight:600;color:#1F8A4D;">{req.time_slot}</td></tr>
+                  <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:7px 0;">Type</td><td style="text-align:right;color:#0a2518;text-transform:capitalize;">{req.consultation_type}</td></tr>
+                </table>
+              </div>
+              <a href="{FRONTEND_URL}/patient/dashboard" style="display:inline-block;background:#1F8A4D;color:#fff;text-decoration:none;padding:13px 28px;border-radius:50px;font-weight:600;font-size:14px;">View in dashboard →</a>
+              <p style="margin:24px 0 0;color:#9BB4A4;font-size:12px;">Please arrive 10 minutes early. Bring a valid ID and any previous medical records.</p>
+            </div>
+          </div>
+        </div>"""
+        try:
+            resend.Emails.send({
+                "from": RESEND_FROM, "to": [user["email"]],
+                "subject": f"Appointment confirmed — Dr. {doctor['name']} on {appt_date_fmt} at {req.time_slot}",
+                "html": patient_html,
+            })
+        except Exception as e:
+            logger.warning("Patient confirmation email failed: %s", e)
+
+        # Notify doctor of new booking
+        if doctor.get("email"):
+            doctor_html = f"""
+            <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#f5faf7;">
+              <div style="background:#fff;border-radius:20px;overflow:hidden;">
+                <div style="background:linear-gradient(135deg,#1F8A4D,#2ECC71);padding:28px 32px;">
+                  <h1 style="margin:0;font-family:Georgia,serif;color:#fff;font-size:24px;font-weight:400;">Sukhya <em>Med</em></h1>
+                </div>
+                <div style="padding:32px;">
+                  <h2 style="margin:0 0 8px;font-family:Georgia,serif;font-weight:400;color:#0a2518;font-size:22px;">New Appointment Booked</h2>
+                  <p style="color:#4A6E59;margin:0 0 20px;font-size:14px;">A patient has booked a slot with you.</p>
+                  <div style="background:#EEFBF3;border-radius:14px;border:1px solid #D4F5E2;padding:20px 24px;">
+                    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                      <tr><td style="color:#4A6E59;padding:6px 0;">Patient</td><td style="text-align:right;font-weight:600;color:#0a2518;">{appt["patient_name"]}</td></tr>
+                      <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:6px 0;">Date</td><td style="text-align:right;font-weight:600;color:#1F8A4D;">{appt_date_fmt}</td></tr>
+                      <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:6px 0;">Time</td><td style="text-align:right;font-weight:600;color:#1F8A4D;">{req.time_slot}</td></tr>
+                      <tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:6px 0;">Type</td><td style="text-align:right;color:#0a2518;text-transform:capitalize;">{req.consultation_type}</td></tr>
+                      {f'<tr style="border-top:1px solid #D4F5E2;"><td style="color:#4A6E59;padding:6px 0;">Reason</td><td style="text-align:right;color:#0a2518;">{req.reason}</td></tr>' if req.reason else ''}
+                    </table>
+                  </div>
+                  <a href="{FRONTEND_URL}/doctor/dashboard" style="display:inline-block;margin-top:20px;background:#1F8A4D;color:#fff;text-decoration:none;padding:13px 28px;border-radius:50px;font-weight:600;font-size:14px;">Open dashboard →</a>
+                </div>
+              </div>
+            </div>"""
+            try:
+                resend.Emails.send({
+                    "from": RESEND_FROM, "to": [doctor["email"]],
+                    "subject": f"New appointment: {appt['patient_name']} on {appt_date_fmt} at {req.time_slot}",
+                    "html": doctor_html,
+                })
+            except Exception as e:
+                logger.warning("Doctor notification email failed: %s", e)
+
     appt.pop("_id", None)
     return appt
 
@@ -1237,7 +1306,7 @@ async def admin_stats(user: dict = Depends(require_role("admin"))):
         "doctors": await db.users.count_documents({"role": "doctor"}),
         "approved_doctors": await db.doctors.count_documents({"is_approved": True}),
         "pending_doctors": await db.doctors.count_documents({"is_approved": False}),
-        "hospitals": await db.hospitals.count_documents({"is_active": True}),
+        "hospitals": await db.hospitals.count_documents({}),
         "appointments": await db.appointments.count_documents({}),
         "booked": await db.appointments.count_documents({"status": "booked"}),
         "completed": await db.appointments.count_documents({"status": "completed"}),
@@ -1291,6 +1360,38 @@ async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: R
         raise HTTPException(status_code=404, detail="Doctor not found")
     await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
     return {"approved": False}
+
+
+@api.post("/admin/upload-hospital-image")
+async def upload_hospital_image(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_role("admin"))
+):
+    """Upload hospital image, resize and return base64 data URL."""
+    ALLOWED = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in ALLOWED:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, or WebP images are allowed.")
+    raw = await file.read()
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Max 5MB.")
+    try:
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+        # Landscape crop for hospital banner: 800×450 (16:9)
+        w, h = img.size
+        target_ratio = 16 / 9
+        if w / h > target_ratio:
+            new_w = int(h * target_ratio)
+            img = img.crop(((w - new_w) // 2, 0, (w + new_w) // 2, h))
+        else:
+            new_h = int(w / target_ratio)
+            img = img.crop((0, (h - new_h) // 2, w, (h + new_h) // 2))
+        img = img.resize((800, 450), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        return {"url": f"data:image/jpeg;base64,{b64}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not process image: {e}")
 
 
 @api.post("/doctor/upload-photo")
