@@ -864,6 +864,10 @@ async def my_doctor_profile(user: dict = Depends(require_role("doctor"))):
     if not d:
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     d["hospital"] = await db.hospitals.find_one({"id": d.get("hospital_id")}, {"_id": 0})
+    # Backfill: if doctor has bio and photo, mark setup complete automatically
+    if not d.get("profile_setup_complete") and d.get("bio") and d.get("profile_photo_url"):
+        await db.doctors.update_one({"user_id": user["id"]}, {"$set": {"profile_setup_complete": True}})
+        d["profile_setup_complete"] = True
     return d
 
 
