@@ -350,6 +350,7 @@ class DoctorProfileUpdate(BaseModel):
     name: Optional[str] = None
     bio: Optional[str] = None
     profile_setup_complete: Optional[bool] = None
+    is_available_today: Optional[bool] = None
     specialization: Optional[str] = None
     years_of_experience: Optional[int] = None
     license_number: Optional[str] = None
@@ -1277,6 +1278,137 @@ async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: R
         raise HTTPException(status_code=404, detail="Doctor not found")
     await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
     return {"approved": False}
+
+
+@api.post("/doctor/toggle-availability")
+async def toggle_doctor_availability(
+    request: Request,
+    user: dict = Depends(require_role("doctor")),
+    _csrf=Depends(verify_csrf)
+):
+    """Toggle doctor availability for today. If going unavailable, reallocate affected appointments."""
+    doctor = await db.doctors.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not doctor:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+
+    now_ist = datetime.now(timezone.utc) + IST_OFFSET
+    today = now_ist.strftime("%Y-%m-%d")
+    current_available = doctor.get("is_available_today", True)
+    new_available = not current_available
+
+    await db.doctors.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"is_available_today": new_available, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    affected_patients = []
+
+    if not new_available:
+        # Find all booked appointments for today
+        todays_appts = await db.appointments.find({
+            "doctor_id": doctor["id"],
+            "date": today,
+            "status": "booked"
+        }, {"_id": 0}).to_list(100)
+
+        for appt in todays_appts:
+            # Try to find next available slot for this doctor (tomorrow onwards)
+            reallocated = False
+            for days_ahead in range(1, 8):
+                future_date = (now_ist + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                slots_data = await doctor_slots(doctor["id"], future_date)
+                # Filter out already booked slots
+                booked_times = set()
+                async for existing in db.appointments.find({"doctor_id": doctor["id"], "date": future_date, "status": "booked"}, {"time_slot": 1}):
+                    booked_times.add(existing["time_slot"])
+                open_slots = [s for s in slots_data.get("slots", []) if s["time"] not in booked_times]
+
+                if open_slots:
+                    new_slot = open_slots[0]["time"]
+                    await db.appointments.update_one(
+                        {"id": appt["id"]},
+                        {"$set": {
+                            "date": future_date,
+                            "time_slot": new_slot,
+                            "status": "booked",
+                            "notes": f"Rescheduled from {today} {appt['time_slot']} due to doctor unavailability",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    affected_patients.append({
+                        "patient_name": appt["patient_name"],
+                        "patient_email": appt["patient_email"],
+                        "old_date": today,
+                        "old_time": appt["time_slot"],
+                        "new_date": future_date,
+                        "new_time": new_slot,
+                        "rescheduled": True,
+                    })
+                    reallocated = True
+                    break
+
+            if not reallocated:
+                # No open slot found — cancel with apology
+                await db.appointments.update_one(
+                    {"id": appt["id"]},
+                    {"$set": {
+                        "status": "cancelled",
+                        "cancellation_reason": "Doctor unavailable — please rebook",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+                affected_patients.append({
+                    "patient_name": appt["patient_name"],
+                    "patient_email": appt["patient_email"],
+                    "old_date": today,
+                    "old_time": appt["time_slot"],
+                    "rescheduled": False,
+                })
+
+        # Send emails to affected patients
+        for p in affected_patients:
+            if not p.get("patient_email"):
+                continue
+            if RESEND_API_KEY and not RESEND_API_KEY.startswith("re_REPLACE"):
+                if p["rescheduled"]:
+                    subject = f"Your appointment with Dr. {doctor['name']} has been rescheduled"
+                    body = f"""
+                    <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;">
+                      <h2 style="font-size:22px;color:#0a2518;margin:0 0 8px;">Appointment Rescheduled</h2>
+                      <p style="color:#4A6E59;margin:0 0 20px;">Hi {p['patient_name']},</p>
+                      <p style="color:#4A6E59;">Dr. {doctor['name']} is unavailable today. Your appointment has been automatically moved to the next available slot.</p>
+                      <div style="background:#EEFBF3;border-radius:12px;padding:20px;margin:20px 0;border:1px solid #D4F5E2;">
+                        <table style="width:100%;font-size:13px;">
+                          <tr><td style="color:#4A6E59;padding:6px 0;">Previous slot</td><td style="text-align:right;text-decoration:line-through;color:#9BB4A4;">{p['old_date']} at {p['old_time']}</td></tr>
+                          <tr><td style="color:#0a2518;font-weight:600;padding:6px 0;border-top:1px solid #D4F5E2;">New slot</td><td style="text-align:right;color:#1F8A4D;font-weight:700;">{p['new_date']} at {p['new_time']}</td></tr>
+                        </table>
+                      </div>
+                      <p style="color:#4A6E59;font-size:13px;">We apologise for any inconvenience. You can also visit <a href="{FRONTEND_URL}" style="color:#1F8A4D;">sukhya.com</a> to manage your appointments.</p>
+                      <p style="color:#9BB4A4;font-size:12px;margin-top:24px;">— Sukhya Med</p>
+                    </div>"""
+                else:
+                    subject = f"Your appointment with Dr. {doctor['name']} has been cancelled"
+                    body = f"""
+                    <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;">
+                      <h2 style="font-size:22px;color:#0a2518;margin:0 0 8px;">Appointment Cancelled</h2>
+                      <p style="color:#4A6E59;margin:0 0 20px;">Hi {p['patient_name']},</p>
+                      <p style="color:#4A6E59;">We're sorry — Dr. {doctor['name']} is unavailable today and no open slots were found to reschedule your {p['old_time']} appointment.</p>
+                      <p style="color:#4A6E59;">Please <a href="{FRONTEND_URL}/find-doctors" style="color:#1F8A4D;">book a new appointment</a> at your convenience. We apologise for the inconvenience.</p>
+                      <p style="color:#9BB4A4;font-size:12px;margin-top:24px;">— Sukhya Med</p>
+                    </div>"""
+                try:
+                    resend.Emails.send({"from": RESEND_FROM, "to": [p["patient_email"]], "subject": subject, "html": body})
+                except Exception as e:
+                    logger.warning("Patient reallocation email failed: %s", e)
+
+    await write_audit(user["id"], "toggle_availability", "doctor", doctor["id"], request,
+                      {"available": new_available, "affected": len(affected_patients)})
+
+    return {
+        "is_available_today": new_available,
+        "affected_count": len(affected_patients),
+        "affected_patients": affected_patients,
+    }
 
 
 @api.post("/admin/invite-doctor")
