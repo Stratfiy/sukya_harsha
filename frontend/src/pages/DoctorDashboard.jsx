@@ -19,49 +19,87 @@ const SPECIALIZATIONS = [
     "Psychiatry","Pulmonology","Radiology","Urology",
 ];
 
-// ─── Cloudinary upload ───────────────────────────────────────────────────────
-async function uploadToCloudinary(file) {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("upload_preset", "doctor_photos");
-    const res = await fetch("https://api.cloudinary.com/v1_1/sukhyamed/image/upload", { method: "POST", body: fd });
-    if (!res.ok) throw new Error("Upload failed");
-    return (await res.json()).secure_url;
-}
-
+// ─── Photo Uploader — uploads to our backend, no external service needed ────
 function PhotoUploader({ value, onChange }) {
     const [uploading, setUploading] = useState(false);
     const [err, setErr] = useState("");
+    const [preview, setPreview] = useState(value || "");
+
     const handleFile = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { setErr("Max 5MB"); return; }
+        if (file.size > 5 * 1024 * 1024) { setErr("File too large — max 5MB."); return; }
+        // Show local preview immediately
+        const localURL = URL.createObjectURL(file);
+        setPreview(localURL);
         setUploading(true); setErr("");
-        try { onChange(await uploadToCloudinary(file)); }
-        catch { setErr("Upload failed — paste a URL below instead."); }
-        finally { setUploading(false); }
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/doctor/upload-photo`, {
+                method: "POST",
+                credentials: "include",
+                body: fd,
+            });
+            if (!res.ok) { const d = await res.json(); throw new Error(d.detail || "Upload failed"); }
+            const { url } = await res.json();
+            onChange(url);
+            setPreview(url);
+            setErr("");
+        } catch(e) {
+            setErr(e.message || "Upload failed.");
+            setPreview(value || ""); // revert preview
+        } finally { setUploading(false); }
     };
+
+    const handleUrl = (e) => {
+        onChange(e.target.value);
+        setPreview(e.target.value);
+    };
+
     return (
         <div className="space-y-3">
             <div className="flex items-center gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-mint-50 border-2 border-mint-100 flex-shrink-0 overflow-hidden">
-                    {value
-                        ? <img src={value} alt="Preview" className="w-full h-full object-cover" onError={e => e.target.style.display="none"} />
-                        : <div className="w-full h-full flex items-center justify-center"><Camera size={24} className="text-mint-300" /></div>}
+                {/* Live preview */}
+                <div className="w-20 h-20 rounded-2xl bg-mint-50 border-2 border-mint-100 flex-shrink-0 overflow-hidden relative">
+                    {preview
+                        ? <img src={preview} alt="Preview" className="w-full h-full object-cover" onError={e=>{e.target.style.display="none";}}/>
+                        : <div className="w-full h-full flex items-center justify-center"><Camera size={24} className="text-mint-300"/></div>}
+                    {uploading && (
+                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded-2xl">
+                            <RefreshCw size={16} className="animate-spin text-mint-500"/>
+                        </div>
+                    )}
                 </div>
                 <div className="flex-1">
-                    <label className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl border text-sm font-medium transition
-                        ${uploading ? "bg-mint-50 text-mint-400 border-mint-100 cursor-wait" : "bg-white border-mint-200 text-mint-700 hover:bg-mint-50 hover:border-mint-400"}`}>
-                        {uploading ? <><RefreshCw size={14} className="animate-spin"/> Uploading…</> : <><Upload size={14}/> Upload photo</>}
-                        <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading}/>
+                    <label className={`flex items-center justify-center gap-2 cursor-pointer w-full px-4 py-3 rounded-xl border-2 border-dashed text-sm font-medium transition
+                        ${uploading
+                            ? "bg-mint-50 text-mint-400 border-mint-200 cursor-wait"
+                            : "bg-white border-mint-200 text-mint-600 hover:bg-mint-50 hover:border-mint-400"}`}>
+                        {uploading
+                            ? <><RefreshCw size={14} className="animate-spin"/> Uploading…</>
+                            : <><Upload size={14}/> {preview ? "Change photo" : "Upload photo"}</>}
+                        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleFile} disabled={uploading}/>
                     </label>
-                    <p className="text-xs text-mint-800/40 mt-1">JPG, PNG up to 5MB</p>
+                    <p className="text-xs text-mint-800/40 mt-1.5 text-center">JPG, PNG, WebP · max 5MB</p>
                 </div>
             </div>
-            <input value={value} onChange={e => onChange(e.target.value)}
-                placeholder="Or paste image URL: https://example.com/photo.jpg"
+            {err && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
+                    <span className="text-red-400 text-xs mt-0.5">✕</span>
+                    <p className="text-xs text-red-600">{err}</p>
+                </div>
+            )}
+            {/* URL fallback */}
+            <div className="flex items-center gap-2 text-xs text-mint-800/40">
+                <div className="flex-1 h-px bg-mint-100"/>
+                <span>or paste URL</span>
+                <div className="flex-1 h-px bg-mint-100"/>
+            </div>
+            <input value={typeof value === "string" && !value.startsWith("data:") ? value : ""}
+                onChange={handleUrl}
+                placeholder="https://example.com/photo.jpg"
                 className="w-full px-4 py-2.5 rounded-xl border border-mint-100 bg-white/80 text-mint-800 text-sm outline-none focus:ring-2 focus:ring-mint-500"/>
-            {err && <p className="text-xs text-amber-600">{err}</p>}
         </div>
     );
 }
