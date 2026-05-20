@@ -625,7 +625,7 @@ function HospitalImageUploader({ value, onChange }) {
 
 function HospitalAdmin({ hospitals, reload }) {
     const [showAdd, setShowAdd] = useState(false);
-    const [form, setForm] = useState({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
+    const [form, setForm] = useState({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", description: "", specialties_available: [], image_url: "" });
     const [error, setError] = useState("");
     const [saving, setSaving] = useState(false);
 
@@ -634,7 +634,7 @@ function HospitalAdmin({ hospitals, reload }) {
         try {
             await api.post("/admin/hospitals", form);
             setShowAdd(false);
-            setForm({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", email: "", description: "", specialties_available: [], image_url: "" });
+            setForm({ name: "", address: "", area: "", city: "", state: "", pin_code: "", phone: "", description: "", specialties_available: [], image_url: "" });
             reload();
         } catch (e) { setError(formatApiError(e.response?.data?.detail)); }
         finally { setSaving(false); }
