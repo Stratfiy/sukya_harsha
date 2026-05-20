@@ -47,7 +47,7 @@ db = mongo_client[os.environ["DB_NAME"]]
 # ---------------- Constants ----------------
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
-ACCESS_TOKEN_MIN = 15
+ACCESS_TOKEN_MIN = 60 * 24  # 24 hours — keeps user logged in across page refreshes
 REFRESH_TOKEN_DAYS = 7
 CSRF_SECRET = os.environ["CSRF_SECRET"]
 FERNET = Fernet(os.environ["FERNET_KEY"].encode())
@@ -318,7 +318,7 @@ class HospitalCreate(BaseModel):
     state: str
     pin_code: str
     phone: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None  # plain string, no email format validation required
     description: Optional[str] = None
     specialties_available: List[str] = []
     image_url: Optional[str] = None
@@ -332,7 +332,7 @@ class HospitalUpdate(BaseModel):
     state: Optional[str] = None
     pin_code: Optional[str] = None
     phone: Optional[str] = None
-    email: Optional[EmailStr] = None
+    email: Optional[str] = None  # plain string, no email format validation
     description: Optional[str] = None
     specialties_available: Optional[List[str]] = None
     image_url: Optional[str] = None
@@ -1355,11 +1355,16 @@ async def admin_approve_doctor(doc_id: str, req: DoctorApprovalAction, request: 
 
 @api.post("/admin/doctors/{doc_id}/reject")
 async def admin_reject_doctor(doc_id: str, req: DoctorApprovalAction, request: Request, user: dict = Depends(require_role("admin")), _csrf=Depends(verify_csrf)):
-    res = await db.doctors.update_one({"id": doc_id}, {"$set": {"is_approved": False, "approved_by": user["id"], "approved_at": datetime.now(timezone.utc).isoformat(), "rejection_reason": req.reason}})
-    if res.matched_count == 0:
+    # Find doctor first to get their user_id for audit + user deletion
+    doctor = await db.doctors.find_one({"id": doc_id}, {"_id": 0, "user_id": 1, "email": 1, "name": 1})
+    if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
-    await write_audit(user["id"], "doctor_rejected", "doctor", doc_id, request, {"reason": req.reason})
-    return {"approved": False}
+    # Delete doctor profile and their user account completely
+    await db.doctors.delete_one({"id": doc_id})
+    await db.users.delete_one({"id": doctor["user_id"]})
+    await write_audit(user["id"], "doctor_rejected_deleted", "doctor", doc_id, request,
+                      {"reason": req.reason, "doctor_email": doctor.get("email"), "doctor_name": doctor.get("name")})
+    return {"rejected": True, "deleted": True}
 
 
 @api.post("/admin/upload-hospital-image")
