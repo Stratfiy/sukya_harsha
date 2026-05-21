@@ -25,8 +25,10 @@ function readCookie(name) {
 }
 
 // Auto-refresh: if any request gets 401, try /auth/refresh once then retry
+// Tracks whether a refresh is already in-flight to avoid multiple simultaneous refresh calls
 let isRefreshing = false;
 let failedQueue = [];
+let hasRedirected = false; // prevent infinite redirect loop
 
 const processQueue = (error) => {
     failedQueue.forEach(({ resolve, reject }) => error ? reject(error) : resolve());
@@ -37,29 +39,45 @@ api.interceptors.response.use(
     (response) => response,
     async (error) => {
         const original = error.config;
-        // If 401 and not already retrying and not the refresh/login endpoint itself
-        if (error.response?.status === 401 && !original._retry &&
-            !original.url?.includes("/auth/refresh") && !original.url?.includes("/auth/login")) {
+
+        // Skip refresh logic for auth endpoints themselves
+        const isAuthEndpoint = original.url?.includes("/auth/refresh") ||
+            original.url?.includes("/auth/login") ||
+            original.url?.includes("/auth/register") ||
+            original.url?.includes("/auth/google");
+
+        if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
             if (isRefreshing) {
+                // Queue this request until refresh completes
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
                 }).then(() => api(original)).catch(e => Promise.reject(e));
             }
+
             original._retry = true;
             isRefreshing = true;
+
             try {
                 await api.post("/auth/refresh");
                 processQueue(null);
+                isRefreshing = false;
                 return api(original);
             } catch (refreshError) {
                 processQueue(refreshError);
-                // Refresh failed — clear user state by reloading
-                window.location.href = "/login";
-                return Promise.reject(refreshError);
-            } finally {
                 isRefreshing = false;
+                // Only redirect once — prevent infinite loop
+                if (!hasRedirected && !window.location.pathname.includes("/login")) {
+                    hasRedirected = true;
+                    // Small delay so queue settles before redirect
+                    setTimeout(() => {
+                        hasRedirected = false;
+                        window.location.href = "/login";
+                    }, 200);
+                }
+                return Promise.reject(refreshError);
             }
         }
+
         return Promise.reject(error);
     }
 );
